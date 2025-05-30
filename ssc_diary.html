@@ -5,10 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SSC 교환일기장</title>
 <style>
-  body { max-width: 600px; margin: auto; font-family: Arial, sans-serif; padding: 1rem; }
-  textarea { width: 100%; padding: 0.5rem; margin: 0.5rem 0; }
-  button { padding: 0.4rem 0.8rem; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-  button:disabled { background: #aaa; cursor: not-allowed; }
+  body {
+    max-width: 600px;
+    margin: auto;
+    font-family: Arial, sans-serif;
+    padding: 1rem;
+  }
+  textarea, input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+  }
+  button {
+    padding: 0.4rem 0.8rem;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  button:disabled {
+    background: #aaa;
+    cursor: not-allowed;
+  }
   .post {
     border: 1px solid #ddd;
     border-radius: 6px;
@@ -16,13 +37,17 @@
     margin-top: 1rem;
     position: relative;
   }
-  .post-delete-btn {
+  .post-delete-btn,
+  .comment-delete-btn {
     position: absolute;
     top: 6px;
     right: 6px;
-    background: #dc3545;
-    font-weight: bold;
-    padding: 0.2rem 0.5rem;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-weight: normal;
+    font-size: 1rem;
   }
   .comment {
     border: 1px solid #ddd;
@@ -34,15 +59,12 @@
     position: relative;
   }
   .comment-delete-btn {
-    position: absolute;
     top: 4px;
-    right: 6px;
-    background: #dc3545;
-    font-weight: bold;
-    padding: 0.1rem 0.4rem;
     font-size: 0.9rem;
   }
-  small { color: #555; }
+  small {
+    color: #555;
+  }
 </style>
 
 <!-- Firebase SDK -->
@@ -62,19 +84,17 @@
 <div id="posts"></div>
 
 <script>
-  // Firebase 설정 - 본인 설정으로 교체!
   const firebaseConfig = {
-      apiKey: "AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI",
-  authDomain: "sscv2-98e6a.firebaseapp.com",
-  projectId: "sscv2-98e6a",
-  storageBucket: "sscv2-98e6a.firebasestorage.app",
-  messagingSenderId: "570226771031",
-  appId: "1:570226771031:web:795ef86749ea312b2a8f12"
+    apiKey: "AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI",
+    authDomain: "sscv2-98e6a.firebaseapp.com",
+    projectId: "sscv2-98e6a",
+    storageBucket: "sscv2-98e6a.firebasestorage.app",
+    messagingSenderId: "570226771031",
+    appId: "1:570226771031:web:795ef86749ea312b2a8f12"
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // 글 작성 함수
   async function submitPost() {
     const content = document.getElementById('post-content').value.trim();
     if (!content) {
@@ -90,7 +110,6 @@
 
   document.getElementById('post-submit').addEventListener('click', submitPost);
 
-  // 댓글 추가 함수 (엔터키 입력 시)
   async function addComment(e, postId) {
     if (e.key === 'Enter' && e.target.value.trim()) {
       await db.collection('posts').doc(postId).collection('comments').add({
@@ -101,10 +120,8 @@
     }
   }
 
-  // 게시글 삭제 함수
   async function deletePost(postId) {
     if (confirm('이 게시글을 삭제하시겠습니까?')) {
-      // 댓글 먼저 삭제 (Firestore는 하위 컬렉션 자동 삭제 안 됨)
       const commentsSnapshot = await db.collection('posts').doc(postId).collection('comments').get();
       const batch = db.batch();
       commentsSnapshot.forEach(doc => batch.delete(doc.ref));
@@ -113,14 +130,12 @@
     }
   }
 
-  // 댓글 삭제 함수
   async function deleteComment(postId, commentId) {
     if (confirm('이 댓글을 삭제하시겠습니까?')) {
       await db.collection('posts').doc(postId).collection('comments').doc(commentId).delete();
     }
   }
 
-  // 댓글 로딩 함수
   function loadComments(postId, container) {
     db.collection('posts').doc(postId).collection('comments')
       .orderBy('createdAt')
@@ -133,7 +148,7 @@
           div.innerHTML = `
             <p>${escapeHTML(c.content)}</p>
             <small>${new Date(c.createdAt.toDate()).toLocaleString()}</small>
-            <button class="comment-delete-btn">×</button>
+            <button class="comment-delete-btn" title="댓글 삭제">×</button>
           `;
           const delBtn = div.querySelector('button');
           delBtn.addEventListener('click', () => deleteComment(postId, doc.id));
@@ -142,7 +157,6 @@
       });
   }
 
-  // 글 불러오기 & 렌더링
   function renderPosts() {
     db.collection('posts').orderBy('createdAt', 'desc')
       .onSnapshot(snapshot => {
@@ -159,21 +173,16 @@
             <input placeholder="댓글 작성 (엔터)" />
             <div class="comments" id="comments-${doc.id}"></div>
           `;
-          // 게시글 삭제 버튼 이벤트
           postDiv.querySelector('.post-delete-btn').addEventListener('click', () => deletePost(doc.id));
-          // 댓글 작성 이벤트
           const commentInput = postDiv.querySelector('input');
           commentInput.addEventListener('keypress', e => addComment(e, doc.id));
 
           postsDiv.appendChild(postDiv);
-
-          // 댓글 로딩
           loadComments(doc.id, postDiv.querySelector(`#comments-${doc.id}`));
         });
       });
   }
 
-  // XSS 방지용 간단 escape 함수
   function escapeHTML(text) {
     return text.replace(/[&<>"']/g, function(m) {
       return ({
