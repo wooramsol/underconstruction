@@ -5,17 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SSC 교환일기장</title>
 <style>
-  body {
-    max-width: 600px;
-    margin: auto;
-    font-family: Arial, sans-serif;
-    padding: 1rem;
-  }
+  body { max-width: 600px; margin: auto; font-family: Arial, sans-serif; padding: 1rem; position: relative; }
   textarea, input {
     width: 100%;
-    box-sizing: border-box;
     padding: 0.5rem;
     margin: 0.5rem 0;
+    box-sizing: border-box;
+    font-size: 1rem;
   }
   button {
     padding: 0.4rem 0.8rem;
@@ -24,7 +20,6 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 1rem;
   }
   button:disabled {
     background: #aaa;
@@ -37,17 +32,26 @@
     margin-top: 1rem;
     position: relative;
   }
-  .post-delete-btn,
-  .comment-delete-btn {
+  .post-delete-btn {
     position: absolute;
     top: 6px;
     right: 6px;
     background: none;
     border: none;
-    color: inherit;
+    color: #000;
+    font-weight: 300; /* 얇게 수정 */
+    font-size: 18px;
     cursor: pointer;
-    font-weight: normal;
-    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .post-delete-btn:hover {
+    color: #dc3545;
   }
   .comment {
     border: 1px solid #ddd;
@@ -59,11 +63,74 @@
     position: relative;
   }
   .comment-delete-btn {
+    position: absolute;
     top: 4px;
-    font-size: 0.9rem;
+    right: 6px;
+    background: none;
+    border: none;
+    color: #000;
+    font-weight: 300; /* 얇게 수정 */
+    padding: 0;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .comment-delete-btn:hover {
+    color: #dc3545;
   }
   small {
     color: #555;
+  }
+  /* 인스타그램 텍스트+아이콘 우측 상단 고정 (채팅창 폭 기준) */
+  .insta-container {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 1000;
+    white-space: nowrap;
+  }
+  .insta-text {
+    font-weight: 600;
+    font-size: 0.9rem;
+    user-select: none;
+  }
+  .insta-icon {
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  /* 인스타그램 드롭다운 */
+  .insta-dropdown {
+    position: absolute;
+    top: 45px; /* 인스타 container 아래 */
+    right: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: none;
+    width: 220px;
+    z-index: 1100;
+  }
+  .insta-dropdown a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    color: #007bff;
+    text-decoration: none;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+  }
+  .insta-dropdown a:hover {
+    background: #f0f8ff;
   }
 </style>
 
@@ -83,18 +150,45 @@
 
 <div id="posts"></div>
 
+<!-- 우측상단 인스타그램 소개 -->
+<div class="insta-container">
+  <span class="insta-text">SSC 멤버들을 소개합니다</span>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    class="insta-icon"
+    width="32"
+    height="32"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#E1306C"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    title="인스타그램"
+  >
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+    <path d="M16 11.37a4 4 0 1 1-7.94 1.13 4 4 0 0 1 7.94-1.13z" />
+    <line x1="17.5" y1="6.5" x2="17.5" y2="6.5" />
+  </svg>
+</div>
+
+<!-- 인스타그램 아이디 리스트 드롭다운 -->
+<div class="insta-dropdown" id="insta-list"></div>
+
 <script>
+  // Firebase 설정 - 본인 설정으로 교체!
   const firebaseConfig = {
-    apiKey: "AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI",
-    authDomain: "sscv2-98e6a.firebaseapp.com",
-    projectId: "sscv2-98e6a",
-    storageBucket: "sscv2-98e6a.firebasestorage.app",
-    messagingSenderId: "570226771031",
-    appId: "1:570226771031:web:795ef86749ea312b2a8f12"
+      apiKey: "AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI",
+    authDomain: "sscv2-98e6a.firebaseapp.com",
+    projectId: "sscv2-98e6a",
+    storageBucket: "sscv2-98e6a.firebasestorage.app",
+    messagingSenderId: "570226771031",
+    appId: "1:570226771031:web:795ef86749ea312b2a8f12"
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
+  // 글 작성 함수
   async function submitPost() {
     const content = document.getElementById('post-content').value.trim();
     if (!content) {
@@ -110,6 +204,7 @@
 
   document.getElementById('post-submit').addEventListener('click', submitPost);
 
+  // 댓글 추가 함수 (엔터키 입력 시)
   async function addComment(e, postId) {
     if (e.key === 'Enter' && e.target.value.trim()) {
       await db.collection('posts').doc(postId).collection('comments').add({
@@ -120,6 +215,7 @@
     }
   }
 
+  // 게시글 삭제 함수
   async function deletePost(postId) {
     if (confirm('이 게시글을 삭제하시겠습니까?')) {
       const commentsSnapshot = await db.collection('posts').doc(postId).collection('comments').get();
@@ -130,12 +226,14 @@
     }
   }
 
+  // 댓글 삭제 함수
   async function deleteComment(postId, commentId) {
     if (confirm('이 댓글을 삭제하시겠습니까?')) {
       await db.collection('posts').doc(postId).collection('comments').doc(commentId).delete();
     }
   }
 
+  // 댓글 로딩 함수
   function loadComments(postId, container) {
     db.collection('posts').doc(postId).collection('comments')
       .orderBy('createdAt')
@@ -157,6 +255,7 @@
       });
   }
 
+  // 글 불러오기 & 렌더링
   function renderPosts() {
     db.collection('posts').orderBy('createdAt', 'desc')
       .onSnapshot(snapshot => {
@@ -178,11 +277,13 @@
           commentInput.addEventListener('keypress', e => addComment(e, doc.id));
 
           postsDiv.appendChild(postDiv);
+
           loadComments(doc.id, postDiv.querySelector(`#comments-${doc.id}`));
         });
       });
   }
 
+  // XSS 방지용 간단 escape 함수
   function escapeHTML(text) {
     return text.replace(/[&<>"']/g, function(m) {
       return ({
@@ -196,6 +297,54 @@
   }
 
   renderPosts();
+
+  // 인스타그램 아이디 리스트 (여기에 실제 30개 ID 넣기)
+  const instaIDs = [
+    "wooramsol",
+    "sen._.sation",
+    "hewon_y",
+    "jiwon.good",
+    "juuhapark",
+    "insta_id_choidongnyeok",
+    "jin.sngbm",
+    "centredemonde",
+    "kwon_wol",
+    "iimmege",
+    "zoslee",
+    "waaji88",
+    "mutzil_lab_",
+    "realjaedo"
+  ];
+
+  const instaListDiv = document.getElementById('insta-list');
+
+  instaIDs.forEach(id => {
+    const a = document.createElement('a');
+    a.href = `https://instagram.com/${id}`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = id;
+    instaListDiv.appendChild(a);
+  });
+
+  // 인스타 아이콘 클릭 시 드롭다운 토글
+  const instaIcon = document.querySelector('.insta-icon');
+  const instaContainer = document.querySelector('.insta-container');
+
+  instaIcon.addEventListener('click', e => {
+    e.stopPropagation();
+    if(instaListDiv.style.display === 'block'){
+      instaListDiv.style.display = 'none';
+    } else {
+      instaListDiv.style.display = 'block';
+    }
+  });
+
+  // 드롭다운 외부 클릭시 닫기
+  document.addEventListener('click', () => {
+    instaListDiv.style.display = 'none';
+  });
+
 </script>
 
 </body>
