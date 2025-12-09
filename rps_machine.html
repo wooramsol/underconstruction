@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unbeatable Rock Paper Scissors Machine</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+        
+        h1 { 
+            margin-bottom: 5px;
+            font-weight: 800; 
+            font-size: 2.5rem; 
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .subtitle {
+            margin-top: 0;
+            margin-bottom: 40px;
+            color: #bdc3c7;
+            font-size: 1.1rem;
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+        
+        .game-container {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            background-color: #34495e;
+            padding: 40px 60px;
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            max-width: 1200px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .player-section, .machine-section {
+            width: 420px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0; 
+        }
+
+        h2 { 
+            margin-bottom: 5px; 
+            font-size: 1.5rem; 
+            line-height: 1.2;
+        }
+
+        .score-display {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #f1c40f; 
+            margin-bottom: 15px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .vs-section {
+            width: 100px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 20px;
+            padding-top: 80px; 
+            height: 300px;
+        }
+        
+        .vs-section h1 {
+            margin: 0;
+            font-size: 3rem;
+            color: #ecf0f1;
+            font-style: italic;
+        }
+
+        .video-container {
+            position: relative;
+            width: 400px;
+            height: 300px;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 4px solid #3498db;
+            background-color: #000;
+            margin-bottom: 0; 
+        }
+
+        #input_video { display: none; }
+        #output_canvas {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+
+        .machine-result {
+            width: 400px; 
+            height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 150px;
+            background-color: #ecf0f1;
+            border-radius: 15px;
+            border: 5px solid #95a5a6; 
+            color: #2c3e50;
+            position: relative;
+            z-index: 2;
+        }
+
+        #status_text {
+            margin-top: 40px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #f1c40f;
+            min-height: 40px;
+            text-align: center;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: white;
+            font-weight: bold;
+        }
+
+        @media (max-width: 1000px) {
+            .game-container {
+                flex-direction: column;
+                padding: 30px;
+                align-items: center;
+            }
+            .vs-section {
+                padding-top: 0;
+                margin: 20px 0;
+                height: auto;
+                transform: rotate(90deg);
+            }
+            .player-section, .machine-section {
+                width: auto;
+            }
+            .video-container, .machine-result {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
+    <p class="subtitle">Designed by Ramsol</p>
+
+    <div class="game-container">
+        <div class="player-section">
+            <h2>You (Player)</h2>
+            <div class="score-display">Wins: <span id="player_score">0</span></div>
+            
+            <div class="video-container">
+                <div class="loading">Loading...</div>
+                <video id="input_video"></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+        </div>
+
+        <div class="vs-section">
+            <h1>VS</h1>
+        </div>
+
+        <div class="machine-section">
+            <h2>RPS Machine</h2>
+            <div class="score-display">Wins: <span id="machine_score">0</span></div>
+            
+            <div class="machine-result" id="machine_result_emoji">⚙️</div>
+        </div>
+    </div>
+
+    <div id="status_text">Show Rock, Paper, or Scissors to the camera!</div>
+
+    <audio id="loseSound" src="https://actions.google.com/sounds/v1/cartoon/pop.ogg" preload="auto"></audio>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const machineResultElement = document.getElementById('machine_result_emoji');
+        const statusText = document.getElementById('status_text');
+        const loadingMsg = document.querySelector('.loading');
+        
+        const machineScoreEl = document.getElementById('machine_score');
+        
+        const loseSound = document.getElementById('loseSound');
+        loseSound.volume = 0.6; 
+
+        // 점수 및 쿨다운 변수
+        let machineScore = 0;
+        let lastWinTime = 0; // 마지막 승리 시점 기록
+        const COOLDOWN_MS = 500; // 0.5초 딜레이
+
+        let modelLoaded = false;
+        let previousGesture = null;
+
+        const EMOTIONS = {
+            'Rock': '✊',
+            'Paper': '🖐️',
+            'Scissors': '✌️',
+            'Unknown': '❓'
+        };
+
+        function playPopSound() {
+            loseSound.currentTime = 0;
+            loseSound.play().catch(e => {
+                console.log("Interaction needed for sound");
+            });
+        }
+
+        function triggerConfetti() {
+            const rect = machineResultElement.getBoundingClientRect();
+            const x = (rect.left + rect.width / 2) / window.innerWidth;
+            const y = (rect.top + rect.height / 2) / window.innerHeight;
+
+            confetti({
+                particleCount: 100, 
+                spread: 70,
+                startVelocity: 30,
+                origin: { x: x, y: y },
+                zIndex: 9999
+            });
+        }
+
+        function isFingerExtended(landmarks, fingerTipIndex, fingerPipIndex) {
+            return landmarks[fingerTipIndex].y < landmarks[fingerPipIndex].y;
+        }
+
+        function determineGesture(landmarks) {
+            const thumbOpen = isFingerExtended(landmarks, 4, 2);
+            const indexOpen = isFingerExtended(landmarks, 8, 6);
+            const middleOpen = isFingerExtended(landmarks, 12, 10);
+            const ringOpen = isFingerExtended(landmarks, 16, 14);
+            const pinkyOpen = isFingerExtended(landmarks, 20, 18);
+
+            let gesture = 'Unknown';
+            let otherFingersCount = [indexOpen, middleOpen, ringOpen, pinkyOpen].filter(Boolean).length;
+            
+            if (otherFingersCount >= 3 && thumbOpen || otherFingersCount === 4) {
+                gesture = 'Paper';
+            } else if (indexOpen && middleOpen && !ringOpen && !pinkyOpen) {
+                gesture = 'Scissors';
+            } else if (thumbOpen && indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+                gesture = 'Scissors';
+            } else if (otherFingersCount === 0 || (otherFingersCount === 0 && thumbOpen)) {
+                gesture = 'Rock';
+            }
+            return gesture;
+        }
+
+        function onResults(results) {
+            if (!modelLoaded) {
+                loadingMsg.style.display = 'none';
+                modelLoaded = true;
+                statusText.innerText = "System Ready.";
+            }
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+                    color: '#00FF00', 
+                    lineWidth: 1.5 
+                });
+                drawLandmarks(canvasCtx, landmarks, {
+                    color: '#FF0000', 
+                    lineWidth: 0.5, 
+                    radius: 2       
+                });
+
+                const userGesture = determineGesture(landmarks);
+                
+                if (userGesture !== 'Unknown') {
+                    let machineMove = '';
+                    if (userGesture === 'Rock') machineMove = 'Paper';
+                    else if (userGesture === 'Paper') machineMove = 'Scissors';
+                    else if (userGesture === 'Scissors') machineMove = 'Rock';
+
+                    machineResultElement.innerText = EMOTIONS[machineMove];
+                    statusText.innerText = "Machine Won!";
+                    statusText.style.color = '#e74c3c';
+
+                    const currentTime = Date.now();
+
+                    // 제스처가 변경되었고, 마지막 승리로부터 0.5초(500ms)가 지났는지 확인
+                    if (userGesture !== previousGesture) {
+                        if (currentTime - lastWinTime > COOLDOWN_MS) {
+                            triggerConfetti();
+                            playPopSound();
+                            
+                            // 점수 증가
+                            machineScore++;
+                            machineScoreEl.innerText = machineScore;
+                            
+                            // 시간 갱신
+                            lastWinTime = currentTime;
+                        }
+                    }
+
+                    previousGesture = userGesture;
+
+                } else {
+                   machineResultElement.innerText = '⚙️';
+                   statusText.innerText = "Show your hand...";
+                   statusText.style.color = '#f1c40f';
+                   previousGesture = null; 
+                }
+            } else {
+                machineResultElement.innerText = '⚙️';
+                statusText.innerText = "Waiting for player...";
+                statusText.style.color = '#bdc3c7';
+                previousGesture = null;
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 400,
+            height: 300
+        });
+        camera.start();
+    </script>
+</body>
+</html>
