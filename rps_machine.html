@@ -60,7 +60,7 @@
 
         .player-section, .machine-section {
             width: 100%;
-            flex: 1; /* 화면 높이 균등 분할 */
+            flex: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -84,12 +84,12 @@
         .video-wrapper, .result-wrapper {
             width: 100%;
             height: 100%; 
-            max-height: 40vh; /* 너무 길어지지 않게 제한 */
+            max-height: 40vh;
             border-radius: 12px;
             border: 3px solid #3498db;
             background-color: #000;
             position: relative;
-            overflow: hidden; /* 넘치는 부분 자르기 */
+            overflow: hidden;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
@@ -116,16 +116,11 @@
 
         #input_video { display: none; }
         
-        /* [근본 해결] 캔버스 CSS 설정 */
+        /* [근본 해결 CSS] object-fit: cover 사용 */
         #output_canvas {
-            position: absolute;
-            top: 0; left: 0;
             width: 100%;
             height: 100%;
-            /* object-fit: cover 
-               -> 캔버스 비율이 박스 비율과 달라도, 
-                  비율을 유지한 채 꽉 채우고 남는 부분은 잘라냅니다. (찌그러짐 방지)
-            */
+            /* 원본 비율 유지하면서 꽉 채우기 (찌그러짐 방지) */
             object-fit: cover; 
             transform: scaleX(-1);
         }
@@ -198,7 +193,6 @@
         <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
         <p class="subtitle">Designed by Ramsol</p>
         <p class="description">
-            <br>
             <span class="bold-text">Why is it unbeatable?</span><br>
             Human reaction time is 0.25s, but this AI needs only <span class="highlight">0.03s</span>.<br>
             It reads your move faster than you can blink.
@@ -253,7 +247,6 @@
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
 
-        // [오디오 자동 재생 권한 획득]
         function playPopSound() {
             loseSound.currentTime = 0;
             loseSound.play().catch(()=>{});
@@ -270,7 +263,6 @@
             }, { once: true });
         });
 
-        // [빵빠레 효과]
         function triggerConfetti() {
             const rect = machineResultElement.getBoundingClientRect();
             const x = (rect.left + rect.width / 2) / window.innerWidth;
@@ -278,12 +270,10 @@
             confetti({ particleCount: 80, spread: 60, startVelocity: 30, origin: { x: x, y: y }, zIndex: 9999 });
         }
 
-        // [손가락 펴짐 감지]
         function isFingerExtended(landmarks, fingerTipIndex, fingerPipIndex) {
             return landmarks[fingerTipIndex].y < landmarks[fingerPipIndex].y;
         }
 
-        // [가위바위보 판단 로직]
         function determineGesture(landmarks) {
             const thumbOpen = isFingerExtended(landmarks, 4, 2);
             const indexOpen = isFingerExtended(landmarks, 8, 6);
@@ -301,7 +291,6 @@
             return gesture;
         }
 
-        // [결과 처리]
         function onResults(results) {
             if (!modelLoaded) {
                 loadingMsg.style.display = 'none';
@@ -309,8 +298,9 @@
                 statusText.innerText = "System Ready.";
             }
 
-            // [근본 해결] 캔버스 크기를 영상 원본 크기와 동기화
-            // 이렇게 해야 그림이 내부적으로 찌그러지지 않음
+            // [근본 해결 JS]
+            // 카메라가 보내주는 실제 해상도로 캔버스 크기를 강제 동기화
+            // 이렇게 하면 1:1 매칭이 되어 절대 찌그러지지 않음
             if (canvasElement.width !== results.image.width || canvasElement.height !== results.image.height) {
                 canvasElement.width = results.image.width;
                 canvasElement.height = results.image.height;
@@ -375,11 +365,11 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
-        // [설정] 카메라 초기화 (해상도는 캔버스에서 자동 조정되므로 기본값 호출)
+        // [근본 해결 JS]
+        // width, height 값을 아예 삭제했습니다.
+        // 이러면 브라우저가 카메라의 '진짜' 비율을 그대로 가져옵니다.
         const camera = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 1280,
-            height: 720
+            onFrame: async () => { await hands.send({image: videoElement}); }
         });
         camera.start();
     </script>
