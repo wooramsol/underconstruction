@@ -13,6 +13,7 @@
     <style>
         * { box-sizing: border-box; }
         body {
+            /* 폰트는 여기서 통합 관리됩니다 */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #2c3e50;
             color: white;
@@ -30,8 +31,10 @@
             background-color: #2c3e50;
             z-index: 10;
         }
-        h1 { margin: 0; font-weight: 800; font-size: 2rem; line-height: 1.2; }
-        .subtitle { margin: 0; color: #bdc3c7; font-size: 1.2rem; margin-top: 5px; }
+        /* 타이틀 크기 (모바일 기준) */
+        h1 { margin: 0; font-weight: 800; font-size: 1rem; line-height: 1.2; }
+        /* [수정] 서브타이틀 크기 축소 (모바일 기준 0.8rem) */
+        .subtitle { margin: 0; color: #bdc3c7; font-size: 0.8rem; margin-top: 5px; }
 
         /* === [기본 스타일: 모바일 우선 (Mobile First)] === */
         .game-container {
@@ -126,8 +129,10 @@
 
         /* === [PC/웹 화면 스타일 (900px 이상)] === */
         @media (min-width: 900px) {
-            h1 { font-size: 3rem; margin-bottom: 10px; }
-            .subtitle { font-size: 1.5rem; margin-bottom: 30px; }
+            /* 타이틀 크기 (PC 기준) */
+            h1 { font-size: 1.5rem; margin-bottom: 10px; }
+            /* [수정] 서브타이틀 크기 축소 (PC 기준 1rem) */
+            .subtitle { font-size: 1rem; margin-bottom: 30px; }
 
             .game-container {
                 flex-direction: row;
@@ -229,6 +234,7 @@
             loseSound.play().catch(()=>{});
         }
         
+        // 사용자 인터랙션 시 오디오 권한 획득
         ['touchstart', 'click'].forEach(evt => {
             document.body.addEventListener(evt, () => {
                 if(loseSound.paused) {
@@ -282,15 +288,15 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const landmarks = results.multiHandLandmarks[0];
 
-                // [수정] 드로잉 두께를 7로 설정
+                // 드로잉 두께를 7로 설정
                 drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
                     color: '#00FF00',
                     lineWidth: 7 
                 });
                 drawLandmarks(canvasCtx, landmarks, {
                     color: '#FF0000',
-                    lineWidth: 2, // 테두리 두께
-                    radius: 7     // 원 크기
+                    lineWidth: 2,
+                    radius: 7
                 });
 
                 const userGesture = determineGesture(landmarks);
