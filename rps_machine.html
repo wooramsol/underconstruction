@@ -45,7 +45,7 @@
         .highlight { color: #f1c40f; font-weight: bold; }
         .bold-text { font-weight: bold; color: white; }
 
-        /* === [모바일 세로 모드 스타일] === */
+        /* === [모바일 레이아웃] === */
         .game-container {
             flex: 1;
             display: flex;
@@ -83,14 +83,14 @@
 
         .video-wrapper, .result-wrapper {
             width: 100%;
-            height: 100%; 
+            height: 100%;
             max-height: 40vh;
             border-radius: 12px;
             border: 3px solid #3498db;
             background-color: #000;
             position: relative;
-            /* [핵심] 넘치는 부분은 잘라냅니다 (Crop) */
-            overflow: hidden;
+            /* [중요] 넘치는 부분을 잘라내는 마스크 역할 */
+            overflow: hidden; 
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
@@ -117,18 +117,17 @@
 
         #input_video { display: none; }
         
-        /* [★근본 해결 CSS★] 
-           캔버스를 박스 중앙에 배치하고, 
-           높이를 100%로 맞춘 뒤 너비는 비율대로 알아서 늘어나게 둠 */
+        /* [★근본 해결 스타일★] 
+           캔버스를 중앙에 고정하고, 자바스크립트로 width/height를 동적으로 제어하여
+           찌그러짐 없이 꽉 차게 만듭니다. */
         #output_canvas {
             position: absolute;
-            height: 100%; /* 높이를 박스에 꽉 채움 */
-            width: auto;  /* 너비는 비율에 맞춰 자동으로 늘어남 (잘림 발생) */
-            
-            /* 중앙 정렬 코드 */
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%) scaleX(-1);
+            /* 초기값은 둘 다 auto */
+            width: auto;
+            height: auto;
         }
 
         #status_text {
@@ -151,7 +150,7 @@
             z-index: 10;
         }
 
-        /* === [PC/웹 화면 스타일 (900px 이상)] === */
+        /* === [PC 레이아웃] === */
         @media (min-width: 900px) {
             h1 { font-size: 1.5rem; }
             .subtitle { font-size: 1rem; }
@@ -190,12 +189,6 @@
             
             h2, .score-display { font-size: 1.5rem; }
             #status_text { font-size: 1.8rem; padding-bottom: 30px; }
-
-            /* PC에서는 가로가 기니까, 너비를 100%로 맞추고 높이를 자름 */
-            #output_canvas {
-                width: 100%;
-                height: auto;
-            }
         }
     </style>
 </head>
@@ -205,7 +198,6 @@
         <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
         <p class="subtitle">Designed by Ramsol</p>
         <p class="description">
-            <br>
             <span class="bold-text">Why is it unbeatable?</span><br>
             Human reaction time is 0.25s, but this AI needs only <span class="highlight">0.03s</span>.<br>
             It reads your move faster than you can blink.
@@ -218,7 +210,7 @@
                 <h2>You</h2>
                 <div class="score-display">Wins: <span id="player_score">0</span></div>
             </div>
-            <div class="video-wrapper">
+            <div class="video-wrapper" id="videoWrapper">
                 <div class="loading">Loading...</div>
                 <video id="input_video" playsinline></video>
                 <canvas id="output_canvas"></canvas>
@@ -250,6 +242,7 @@
         const loadingMsg = document.querySelector('.loading');
         const machineScoreEl = document.getElementById('machine_score');
         const loseSound = document.getElementById('loseSound');
+        const videoWrapper = document.getElementById('videoWrapper');
         loseSound.volume = 0.6;
 
         let machineScore = 0;
@@ -259,6 +252,32 @@
         let previousGesture = null;
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
+
+        // [★중요★] 캔버스 비율 자동 맞춤 함수 (찌그러짐 방지 로직)
+        function fitCanvasToContainer(videoWidth, videoHeight) {
+            const wrapperWidth = videoWrapper.clientWidth;
+            const wrapperHeight = videoWrapper.clientHeight;
+            
+            const videoRatio = videoWidth / videoHeight;
+            const wrapperRatio = wrapperWidth / wrapperHeight;
+
+            // 캔버스 자체 해상도는 원본과 1:1로 맞춤 (화질 보존)
+            if (canvasElement.width !== videoWidth || canvasElement.height !== videoHeight) {
+                canvasElement.width = videoWidth;
+                canvasElement.height = videoHeight;
+            }
+
+            // CSS로 보이는 크기 조절 (Crop)
+            if (videoRatio > wrapperRatio) {
+                // 비디오가 더 납작함 -> 높이를 100%로 맞추고 가로를 잘라냄
+                canvasElement.style.width = 'auto';
+                canvasElement.style.height = '100%';
+            } else {
+                // 비디오가 더 길쭉함 -> 너비를 100%로 맞추고 위아래를 잘라냄
+                canvasElement.style.width = '100%';
+                canvasElement.style.height = 'auto';
+            }
+        }
 
         function playPopSound() {
             loseSound.currentTime = 0;
@@ -311,14 +330,8 @@
                 statusText.innerText = "System Ready.";
             }
 
-            // [★근본 해결 JS★]
-            // 캔버스 크기를 카메라 원본 크기와 1:1로 맞춤.
-            // 이렇게 하면 그림이 내부적으로 절대 찌그러지지 않습니다.
-            // 보여지는 건 CSS가 알아서 자릅니다.
-            if (canvasElement.width !== results.image.width || canvasElement.height !== results.image.height) {
-                canvasElement.width = results.image.width;
-                canvasElement.height = results.image.height;
-            }
+            // [★핵심 적용★] 매 프레임마다 최적의 비율로 CSS 조정
+            fitCanvasToContainer(results.image.width, results.image.height);
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -379,7 +392,7 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
-        // [중요] 카메라 설정: 해상도를 강제하지 않고 카메라 기본값 사용
+        // 카메라 설정: 해상도를 강제하지 않음 (카메라가 주는 대로 받음)
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); }
         });
