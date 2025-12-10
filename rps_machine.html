@@ -33,7 +33,6 @@
         h1 { margin: 0; font-weight: 800; font-size: 1rem; line-height: 1.2; }
         .subtitle { margin: 0; color: #bdc3c7; font-size: 0.8rem; margin-top: 5px; }
         
-        /* [수정] 설명글 스타일 */
         .description { 
             font-size: 0.75rem; 
             color: #bdc3c7; 
@@ -46,7 +45,7 @@
         .highlight { color: #f1c40f; font-weight: bold; }
         .bold-text { font-weight: bold; color: white; }
 
-        /* === [기본 스타일: 모바일 세로 모드] === */
+        /* === [모바일 세로 모드 스타일] === */
         .game-container {
             flex: 1;
             display: flex;
@@ -61,7 +60,7 @@
 
         .player-section, .machine-section {
             width: 100%;
-            flex: 1; 
+            flex: 1; /* 화면 높이 균등 분할 */
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -85,12 +84,12 @@
         .video-wrapper, .result-wrapper {
             width: 100%;
             height: 100%; 
-            max-height: 40vh; 
+            max-height: 40vh; /* 너무 길어지지 않게 제한 */
             border-radius: 12px;
             border: 3px solid #3498db;
             background-color: #000;
             position: relative;
-            overflow: hidden;
+            overflow: hidden; /* 넘치는 부분 자르기 */
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
@@ -116,12 +115,18 @@
         }
 
         #input_video { display: none; }
+        
+        /* [근본 해결] 캔버스 CSS 설정 */
         #output_canvas {
             position: absolute;
             top: 0; left: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            /* object-fit: cover 
+               -> 캔버스 비율이 박스 비율과 달라도, 
+                  비율을 유지한 채 꽉 채우고 남는 부분은 잘라냅니다. (찌그러짐 방지)
+            */
+            object-fit: cover; 
             transform: scaleX(-1);
         }
 
@@ -142,6 +147,7 @@
             transform: translate(-50%, -50%);
             color: white; font-weight: bold;
             font-size: 1rem;
+            z-index: 10;
         }
 
         /* === [PC/웹 화면 스타일 (900px 이상)] === */
@@ -191,7 +197,6 @@
     <header>
         <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
         <p class="subtitle">Designed by Ramsol</p>
-        
         <p class="description">
             <br>
             <span class="bold-text">Why is it unbeatable?</span><br>
@@ -248,10 +253,7 @@
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
 
-        const isMobile = window.innerWidth < 900;
-        canvasElement.width = isMobile ? 720 : 1280;
-        canvasElement.height = isMobile ? 1280 : 720;
-
+        // [오디오 자동 재생 권한 획득]
         function playPopSound() {
             loseSound.currentTime = 0;
             loseSound.play().catch(()=>{});
@@ -268,6 +270,7 @@
             }, { once: true });
         });
 
+        // [빵빠레 효과]
         function triggerConfetti() {
             const rect = machineResultElement.getBoundingClientRect();
             const x = (rect.left + rect.width / 2) / window.innerWidth;
@@ -275,10 +278,12 @@
             confetti({ particleCount: 80, spread: 60, startVelocity: 30, origin: { x: x, y: y }, zIndex: 9999 });
         }
 
+        // [손가락 펴짐 감지]
         function isFingerExtended(landmarks, fingerTipIndex, fingerPipIndex) {
             return landmarks[fingerTipIndex].y < landmarks[fingerPipIndex].y;
         }
 
+        // [가위바위보 판단 로직]
         function determineGesture(landmarks) {
             const thumbOpen = isFingerExtended(landmarks, 4, 2);
             const indexOpen = isFingerExtended(landmarks, 8, 6);
@@ -296,11 +301,19 @@
             return gesture;
         }
 
+        // [결과 처리]
         function onResults(results) {
             if (!modelLoaded) {
                 loadingMsg.style.display = 'none';
                 modelLoaded = true;
                 statusText.innerText = "System Ready.";
+            }
+
+            // [근본 해결] 캔버스 크기를 영상 원본 크기와 동기화
+            // 이렇게 해야 그림이 내부적으로 찌그러지지 않음
+            if (canvasElement.width !== results.image.width || canvasElement.height !== results.image.height) {
+                canvasElement.width = results.image.width;
+                canvasElement.height = results.image.height;
             }
 
             canvasCtx.save();
@@ -362,10 +375,11 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
+        // [설정] 카메라 초기화 (해상도는 캔버스에서 자동 조정되므로 기본값 호출)
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
-            width: isMobile ? 720 : 1280,
-            height: isMobile ? 1280 : 720
+            width: 1280,
+            height: 720
         });
         camera.start();
     </script>
