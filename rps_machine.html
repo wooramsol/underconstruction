@@ -89,6 +89,7 @@
             border: 3px solid #3498db;
             background-color: #000;
             position: relative;
+            /* [핵심] 넘치는 부분은 잘라냅니다 (Crop) */
             overflow: hidden;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
@@ -116,12 +117,18 @@
 
         #input_video { display: none; }
         
-        /* [중요] object-fit: cover가 화면을 꽉 채우고 비율을 유지해줍니다 (찌그러짐 방지) */
+        /* [★근본 해결 CSS★] 
+           캔버스를 박스 중앙에 배치하고, 
+           높이를 100%로 맞춘 뒤 너비는 비율대로 알아서 늘어나게 둠 */
         #output_canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: cover; 
-            transform: scaleX(-1);
+            position: absolute;
+            height: 100%; /* 높이를 박스에 꽉 채움 */
+            width: auto;  /* 너비는 비율에 맞춰 자동으로 늘어남 (잘림 발생) */
+            
+            /* 중앙 정렬 코드 */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scaleX(-1);
         }
 
         #status_text {
@@ -183,6 +190,12 @@
             
             h2, .score-display { font-size: 1.5rem; }
             #status_text { font-size: 1.8rem; padding-bottom: 30px; }
+
+            /* PC에서는 가로가 기니까, 너비를 100%로 맞추고 높이를 자름 */
+            #output_canvas {
+                width: 100%;
+                height: auto;
+            }
         }
     </style>
 </head>
@@ -247,11 +260,6 @@
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
 
-        // [버벅임 해결] 해상도를 고정으로 설정합니다 (실시간 변경 X)
-        // 1280x720은 대부분의 PC/모바일에서 무난한 HD 화질입니다.
-        canvasElement.width = 1280;
-        canvasElement.height = 720;
-
         function playPopSound() {
             loseSound.currentTime = 0;
             loseSound.play().catch(()=>{});
@@ -303,8 +311,14 @@
                 statusText.innerText = "System Ready.";
             }
 
-            // [중요] 여기에 있던 캔버스 크기 재조정 코드를 삭제했습니다.
-            // 덕분에 무한 루프와 렉이 사라집니다.
+            // [★근본 해결 JS★]
+            // 캔버스 크기를 카메라 원본 크기와 1:1로 맞춤.
+            // 이렇게 하면 그림이 내부적으로 절대 찌그러지지 않습니다.
+            // 보여지는 건 CSS가 알아서 자릅니다.
+            if (canvasElement.width !== results.image.width || canvasElement.height !== results.image.height) {
+                canvasElement.width = results.image.width;
+                canvasElement.height = results.image.height;
+            }
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -365,11 +379,9 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
-        // [중요] 카메라 설정: 1280x720 해상도 요청 (가장 안정적)
+        // [중요] 카메라 설정: 해상도를 강제하지 않고 카메라 기본값 사용
         const camera = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 1280,
-            height: 720
+            onFrame: async () => { await hands.send({image: videoElement}); }
         });
         camera.start();
     </script>
