@@ -116,11 +116,10 @@
 
         #input_video { display: none; }
         
-        /* [근본 해결 CSS] object-fit: cover 사용 */
+        /* [중요] object-fit: cover가 화면을 꽉 채우고 비율을 유지해줍니다 (찌그러짐 방지) */
         #output_canvas {
             width: 100%;
             height: 100%;
-            /* 원본 비율 유지하면서 꽉 채우기 (찌그러짐 방지) */
             object-fit: cover; 
             transform: scaleX(-1);
         }
@@ -193,6 +192,7 @@
         <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
         <p class="subtitle">Designed by Ramsol</p>
         <p class="description">
+            <br>
             <span class="bold-text">Why is it unbeatable?</span><br>
             Human reaction time is 0.25s, but this AI needs only <span class="highlight">0.03s</span>.<br>
             It reads your move faster than you can blink.
@@ -247,6 +247,11 @@
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
 
+        // [버벅임 해결] 해상도를 고정으로 설정합니다 (실시간 변경 X)
+        // 1280x720은 대부분의 PC/모바일에서 무난한 HD 화질입니다.
+        canvasElement.width = 1280;
+        canvasElement.height = 720;
+
         function playPopSound() {
             loseSound.currentTime = 0;
             loseSound.play().catch(()=>{});
@@ -298,13 +303,8 @@
                 statusText.innerText = "System Ready.";
             }
 
-            // [근본 해결 JS]
-            // 카메라가 보내주는 실제 해상도로 캔버스 크기를 강제 동기화
-            // 이렇게 하면 1:1 매칭이 되어 절대 찌그러지지 않음
-            if (canvasElement.width !== results.image.width || canvasElement.height !== results.image.height) {
-                canvasElement.width = results.image.width;
-                canvasElement.height = results.image.height;
-            }
+            // [중요] 여기에 있던 캔버스 크기 재조정 코드를 삭제했습니다.
+            // 덕분에 무한 루프와 렉이 사라집니다.
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -365,11 +365,11 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
-        // [근본 해결 JS]
-        // width, height 값을 아예 삭제했습니다.
-        // 이러면 브라우저가 카메라의 '진짜' 비율을 그대로 가져옵니다.
+        // [중요] 카메라 설정: 1280x720 해상도 요청 (가장 안정적)
         const camera = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); }
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280,
+            height: 720
         });
         camera.start();
     </script>
