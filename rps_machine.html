@@ -26,18 +26,22 @@
         header {
             flex: 0 0 auto;
             text-align: center;
-            padding: 15px 10px;
+            /* [수정] 상단 패딩 감소 */
+            padding: 10px 5px;
             background-color: #2c3e50;
             z-index: 10;
         }
-        h1 { margin: 0; font-weight: 800; font-size: 1rem; line-height: 1.2; }
-        .subtitle { margin: 0; color: #bdc3c7; font-size: 0.8rem; margin-top: 5px; }
+        /* [수정] 타이틀 크기 축소 (한 줄 맞춤) */
+        h1 { margin: 0; font-weight: 800; font-size: 0.9rem; line-height: 1.2; }
+        /* [수정] 서브타이틀 간격 감소 */
+        .subtitle { margin: 0; color: #bdc3c7; font-size: 0.75rem; margin-top: 2px; }
         
+        /* [수정] 설명글 간격 및 크기 감소 */
         .description { 
-            font-size: 0.75rem; 
+            font-size: 0.7rem; 
             color: #bdc3c7; 
-            margin-top: 8px; 
-            line-height: 1.4; 
+            margin-top: 3px; /* 타이틀과 더 가깝게 */
+            line-height: 1.3; 
             max-width: 600px; 
             margin-left: auto; 
             margin-right: auto;
@@ -52,7 +56,9 @@
             flex-direction: column;
             align-items: center;
             justify-content: space-evenly;
-            padding: 5px 10px;
+            /* [수정] 컨테이너 패딩 및 간격 최소화 */
+            padding: 5px;
+            gap: 5px;
             width: 100%;
             margin: 0 auto;
             overflow: hidden;
@@ -66,14 +72,16 @@
             align-items: center;
             justify-content: center;
             min-height: 0;
-            margin-bottom: 5px;
+            /* [수정] 섹션 간격 감소 */
+            margin-bottom: 2px;
         }
 
         .info-bar {
             display: flex;
             justify-content: space-between;
             width: 100%;
-            padding: 0 10px;
+            padding: 0 5px;
+            /* [수정] 정보바 간격 감소 */
             margin-bottom: 2px;
             align-items: flex-end;
             flex: 0 0 auto;
@@ -84,12 +92,12 @@
         .video-wrapper, .result-wrapper {
             width: 100%;
             height: 100%;
-            max-height: 40vh;
+            /* [수정] 최대 높이 제한을 약간 늘려 비율 유지 */
+            max-height: 42vh;
             border-radius: 12px;
             border: 3px solid #3498db;
             background-color: #000;
             position: relative;
-            /* [중요] 넘치는 부분을 잘라내는 마스크 역할 */
             overflow: hidden; 
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
@@ -100,7 +108,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 5rem; 
+            /* [수정] 이모지 크기 약간 감소 */
+            font-size: 4.5rem; 
             color: #2c3e50;
         }
 
@@ -117,22 +126,19 @@
 
         #input_video { display: none; }
         
-        /* [★근본 해결 스타일★] 
-           캔버스를 중앙에 고정하고, 자바스크립트로 width/height를 동적으로 제어하여
-           찌그러짐 없이 꽉 차게 만듭니다. */
         #output_canvas {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%) scaleX(-1);
-            /* 초기값은 둘 다 auto */
             width: auto;
             height: auto;
         }
 
         #status_text {
             flex: 0 0 auto;
-            padding: 10px;
+            /* [수정] 하단 바 패딩 감소 */
+            padding: 10px 5px;
             font-size: 1rem;
             font-weight: bold;
             color: #f1c40f;
@@ -152,16 +158,18 @@
 
         /* === [PC 레이아웃] === */
         @media (min-width: 900px) {
-            h1 { font-size: 1.5rem; }
-            .subtitle { font-size: 1rem; }
-            .description { font-size: 1rem; }
+            /* [수정] PC에서도 비율에 맞춰 크기 약간 축소 */
+            h1 { font-size: 1.2rem; }
+            .subtitle { font-size: 0.9rem; }
+            .description { font-size: 0.9rem; }
 
             .game-container {
                 flex-direction: row;
                 align-items: flex-start;
                 gap: 50px;
                 max-width: 1200px;
-                padding-top: 40px;
+                /* [수정] PC 상단 여백 감소 */
+                padding-top: 20px;
             }
 
             .player-section, .machine-section {
@@ -188,7 +196,8 @@
             }
             
             h2, .score-display { font-size: 1.5rem; }
-            #status_text { font-size: 1.8rem; padding-bottom: 30px; }
+            /* [수정] PC 하단 바 크기 및 여백 감소 */
+            #status_text { font-size: 1.2rem; padding-bottom: 15px; }
         }
     </style>
 </head>
@@ -198,6 +207,7 @@
         <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
         <p class="subtitle">Designed by Ramsol</p>
         <p class="description">
+            <br>
             <span class="bold-text">Why is it unbeatable?</span><br>
             Human reaction time is 0.25s, but this AI needs only <span class="highlight">0.03s</span>.<br>
             It reads your move faster than you can blink.
@@ -253,7 +263,7 @@
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
 
-        // [★중요★] 캔버스 비율 자동 맞춤 함수 (찌그러짐 방지 로직)
+        // 캔버스 비율 자동 맞춤 (크롭 로직)
         function fitCanvasToContainer(videoWidth, videoHeight) {
             const wrapperWidth = videoWrapper.clientWidth;
             const wrapperHeight = videoWrapper.clientHeight;
@@ -261,19 +271,15 @@
             const videoRatio = videoWidth / videoHeight;
             const wrapperRatio = wrapperWidth / wrapperHeight;
 
-            // 캔버스 자체 해상도는 원본과 1:1로 맞춤 (화질 보존)
             if (canvasElement.width !== videoWidth || canvasElement.height !== videoHeight) {
                 canvasElement.width = videoWidth;
                 canvasElement.height = videoHeight;
             }
 
-            // CSS로 보이는 크기 조절 (Crop)
             if (videoRatio > wrapperRatio) {
-                // 비디오가 더 납작함 -> 높이를 100%로 맞추고 가로를 잘라냄
                 canvasElement.style.width = 'auto';
                 canvasElement.style.height = '100%';
             } else {
-                // 비디오가 더 길쭉함 -> 너비를 100%로 맞추고 위아래를 잘라냄
                 canvasElement.style.width = '100%';
                 canvasElement.style.height = 'auto';
             }
@@ -330,7 +336,7 @@
                 statusText.innerText = "System Ready.";
             }
 
-            // [★핵심 적용★] 매 프레임마다 최적의 비율로 CSS 조정
+            // 매 프레임 비율 조정 (찌그러짐 방지)
             fitCanvasToContainer(results.image.width, results.image.height);
 
             canvasCtx.save();
@@ -340,14 +346,15 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const landmarks = results.multiHandLandmarks[0];
 
+                // 선 두께 6, 원 크기 6으로 설정
                 drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
                     color: '#00FF00',
-                    lineWidth: 7 
+                    lineWidth: 6 
                 });
                 drawLandmarks(canvasCtx, landmarks, {
                     color: '#FF0000',
                     lineWidth: 2,
-                    radius: 7
+                    radius: 6
                 });
 
                 const userGesture = determineGesture(landmarks);
