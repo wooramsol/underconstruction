@@ -30,8 +30,8 @@
     <script>
         let scene, camera, renderer, treeGroup, starGroup, font, controls;
 
-        const chars = ['R', 'A', 'M', 'S', 'O', 'L'];
-        const starChars = ['.', ',', '\'', '`', '-', ':', '^'];
+        const chars = ['R', 'A', 'M', 'S', 'O', 'L' , '*'];
+        const starChars = ['*'];
 
         const BG_COLOR = new THREE.Color(0x010301); 
         const COLOR_BOTTOM = new THREE.Color(0x0f400f); 
@@ -58,7 +58,21 @@
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            controls.enablePan = false;
+            
+            controls.enablePan = true;
+            controls.screenSpacePanning = true;
+
+            controls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.PAN,
+                RIGHT: THREE.MOUSE.DOLLY
+            };
+
+            controls.touches = {
+                ONE: THREE.TOUCH.ROTATE,
+                TWO: THREE.TOUCH.DOLLY_PAN
+            };
+
             controls.minDistance = 5;
             controls.maxDistance = 30;
 
@@ -78,7 +92,7 @@
         }
 
         function createExtraSpikyTree() {
-            const particleCount = 7000; 
+            const particleCount = 10000; 
             const treeHeight = 8.5;
             const maxRadius = 4.0; 
 
