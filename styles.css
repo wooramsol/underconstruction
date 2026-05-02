@@ -1,0 +1,22 @@
+@media all and (max-width:1024px){
+    .image{
+        display:none;
+    }
+    .text{
+        display:none;
+    }
+    .main img{
+        width:100%;
+        height: initial;
+    }
+    .imgg{
+        width:100%;
+    }
+    .description{
+        font-size:2em;
+    }
+    .concon{
+        font-size:1.5em;
+    }
+    .instagram-media{margin:0 auto !important;}
+}

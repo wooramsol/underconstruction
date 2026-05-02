@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>📖 Open Diary (모두의 일기장)</title>
+<style>
+  body { 
+    max-width: 600px; 
+    margin: auto; 
+    font-family: 'Arial', sans-serif; 
+    padding: 1rem; 
+    line-height: 1.6;
+    background-color: #f9f9f9; 
+  }
+  
+  /* 타이틀 수정: h2 -> h3, 중앙 정렬 */
+  h3 { 
+    text-align: center; 
+    color: #333; 
+    margin-top: 2rem; 
+    margin-bottom: 0.5rem; 
+    font-size: 1.5em; 
+  }
+  
+  .desc { 
+    text-align: center; 
+    color: #444; 
+    margin-bottom: 2rem; 
+    font-size: 1rem;
+    word-break: keep-all;
+  }
+  .desc-en {
+    display: block;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: #777;
+    line-height: 1.4;
+  }
+
+  .input-container {
+    position: relative;
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 65px 10px 12px;
+    margin: 0.5rem 0;
+    box-sizing: border-box;
+    font-size: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    line-height: 1.5;
+    resize: none;
+    overflow-y: hidden;
+    font-family: inherit;
+    display: block;
+    background-color: #ffffff;
+  }
+  textarea:focus { outline: none; border-color: #007bff; }
+
+  .post-submit-btn, .comment-submit-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: #007bff;
+    font-size: 0.95rem;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 5px;
+    z-index: 10;
+  }
+
+  .post-submit-btn:disabled, .comment-submit-btn:disabled {
+    color: #ccc;
+    cursor: default;
+  }
+
+  .post {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1.2rem;
+    position: relative;
+    background-color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .post-delete-btn, .comment-delete-btn {
+    position: absolute;
+    right: 8px;
+    top: 4px;
+    background: none;
+    border: none;
+    color: #bbb;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .post-delete-btn:hover, .comment-delete-btn:hover { color: #ff4d4d; }
+
+  .comment {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 0.8rem;
+    margin-top: 0.6rem;
+    background-color: #ffffff;
+    margin-left: 1rem;
+    position: relative;
+  }
+
+  small {
+    color: #888;
+    display: block;      
+    text-align: right;   
+    font-size: 0.75rem;
+    margin-top: 8px;
+  }
+</style>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<h3>📖 Open Diary (모두의 일기장)</h3>
+
+<div class="desc">
+  여러분의 일상을 자유롭게 공유해 주세요.<br>
+  누구나 자유롭게 댓글을 남길 수 있습니다.<br>
+  모든 기록은 익명입니다.
+  <span class="desc-en">
+    Feel free to share your daily stories.<br>
+    Anyone is welcome to join the conversation.<br>
+    All posts are anonymous.
+  </span>
+</div>
+
+<div class="input-container">
+  <textarea id="post-content" rows="1" 
+    placeholder="How have you been?" 
+    oninput="autoResize(this); checkInput(this, 'post-submit')"></textarea>
+  <button id="post-submit" class="post-submit-btn" disabled>Post</button>
+</div>
+
+<div id="posts"></div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI",
+    authDomain: "sscv2-98e6a.firebaseapp.com",
+    projectId: "sscv2-98e6a",
+    storageBucket: "sscv2-98e6a.firebasestorage.app",
+    messagingSenderId: "570226771031",
+    appId: "1:570226771031:web:795ef86749ea312b2a8f12"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const checkAdmin = () => prompt('관리자 암호를 입력하세요.') === '921102';
+
+  function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  }
+
+  function checkInput(textarea, btnId) {
+    const btn = typeof btnId === 'string' ? document.getElementById(btnId) : btnId;
+    btn.disabled = textarea.value.trim().length === 0;
+  }
+
+  function formatDate(date) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = months[date.getMonth()];
+    const y = date.getFullYear();
+    const h = date.getHours().toString().padStart(2, '0');
+    const min = date.getMinutes().toString().padStart(2, '0');
+    return `${d} ${m} ${y} ${h}:${min}`;
+  }
+
+  async function submitPost() {
+    const textarea = document.getElementById('post-content');
+    const content = textarea.value.trim();
+    if (!content) return;
+    await db.collection('posts').add({ content, createdAt: new Date() });
+    textarea.value = '';
+    textarea.style.height = 'auto';
+    document.getElementById('post-submit').disabled = true;
+  }
+  document.getElementById('post-submit').addEventListener('click', submitPost);
+
+  async function submitComment(postId, textarea) {
+    const content = textarea.value.trim();
+    if (!content) return;
+    await db.collection('posts').doc(postId).collection('comments').add({
+      content: content,
+      createdAt: new Date()
+    });
+    textarea.value = '';
+    textarea.style.height = 'auto';
+    textarea.nextElementSibling.disabled = true;
+  }
+
+  async function deletePost(id) {
+    if(checkAdmin()) await db.collection('posts').doc(id).delete();
+  }
+
+  async function deleteComment(postId, commentId) {
+    if(checkAdmin()) {
+      await db.collection('posts').doc(postId).collection('comments').doc(commentId).delete();
+    }
+  }
+
+  function renderPosts() {
+    const postsDiv = document.getElementById('posts');
+    db.collection('posts').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+      snapshot.docChanges().forEach(change => {
+        const doc = change.doc;
+        if (change.type === 'added') {
+          const post = doc.data();
+          const postDiv = document.createElement('div');
+          postDiv.className = 'post';
+          postDiv.id = `post-${doc.id}`;
+          const timeObj = post.createdAt ? post.createdAt.toDate() : new Date();
+          
+          postDiv.innerHTML = `
+            <button class="post-delete-btn" onclick="deletePost('${doc.id}')">×</button>
+            <p style="margin:0; padding-right:25px; white-space: pre-wrap;">${post.content}</p>
+            <small>${formatDate(timeObj)}</small>
+            <div class="input-container" style="margin-top:10px;">
+              <textarea class="reply-input" rows="1" placeholder="Reply..." 
+                oninput="autoResize(this); checkInput(this, this.nextElementSibling)"></textarea>
+              <button class="comment-submit-btn" disabled>Reply</button>
+            </div>
+            <div id="comments-${doc.id}"></div>
+          `;
+
+          const replyInput = postDiv.querySelector('.reply-input');
+          const replyBtn = postDiv.querySelector('.comment-submit-btn');
+          replyBtn.onclick = () => submitComment(doc.id, replyInput);
+
+          postsDiv.prepend(postDiv);
+          loadComments(doc.id);
+        }
+        if (change.type === 'removed') {
+          document.getElementById(`post-${doc.id}`)?.remove();
+        }
+      });
+    });
+  }
+
+  function loadComments(postId) {
+    const container = document.getElementById(`comments-${postId}`);
+    db.collection('posts').doc(postId).collection('comments').orderBy('createdAt', 'asc').onSnapshot(snap => {
+      container.innerHTML = '';
+      snap.forEach(doc => {
+        const c = doc.data();
+        const div = document.createElement('div');
+        div.className = 'comment';
+        div.id = `comment-${doc.id}`;
+        const timeObj = c.createdAt ? c.createdAt.toDate() : new Date();
+        div.innerHTML = `
+          <button class="comment-delete-btn" onclick="deleteComment('${postId}', '${doc.id}')">×</button>
+          <p style="margin:0; padding-right:20px; white-space: pre-wrap;">${c.content}</p>
+          <small>${formatDate(timeObj)}</small>
+        `;
+        container.appendChild(div);
+      });
+    });
+  }
+
+  renderPosts();
+</script>
+
+</body>
+</html>
