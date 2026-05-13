@@ -122,12 +122,29 @@
     font-size: 0.75rem;
     margin-top: 8px;
   }
+
+  .back-link {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    padding: 5px 10px;
+    background: rgba(255, 255, 255, 0.8);
+    text-decoration: none;
+    color: blue;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+    z-index: 1000;
+  }
+  .back-link:hover { background: #fff; }
 </style>
 
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
+
+<a href="index.html" class="back-link">← Back</a>
 
 <h3>📖 Open Diary (모두의 일기장)</h3>
 
