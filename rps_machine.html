@@ -263,14 +263,14 @@
         } catch (e) { console.warn("Firebase init failed:", e); }
     }
 
-    let geoInfo = { ip: "unknown", region: "unknown" };
+    let geoInfo = { ip: "unknown", country: "unknown" };
     (async () => {
         try {
             const r = await fetch("https://ipapi.co/json/");
             const d = await r.json();
             geoInfo = {
                 ip: d.ip || "unknown",
-                region: [d.city, d.region, d.country_name || d.country].filter(Boolean).join("-") || "unknown"
+                country: d.country_name || d.country || "unknown"
             };
         } catch (e) {}
     })();
@@ -278,11 +278,16 @@
     function sanitize(s) { return String(s).replace(/[^a-zA-Z0-9._-]/g, "_"); }
 
     function buildFilename(ext) {
-        const now = new Date();
-        const pad = n => String(n).padStart(2, "0");
-        const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
-                   `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        return `${ts}__${sanitize(geoInfo.ip)}__${sanitize(geoInfo.region)}.${ext}`;
+        const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Seoul",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+        }).formatToParts(new Date());
+        const p = {};
+        for (const x of parts) p[x.type] = x.value;
+        const hour = p.hour === "24" ? "00" : p.hour;
+        const ts = `${p.year}-${p.month}-${p.day}_${hour}-${p.minute}-${p.second}`;
+        return `${ts}__${sanitize(geoInfo.ip)}__${sanitize(geoInfo.country)}.${ext}`;
     }
 
     function pickMimeType() {
