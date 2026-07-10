@@ -277,16 +277,16 @@
 
     function sanitize(s) { return String(s).replace(/[^a-zA-Z0-9._-]/g, "_"); }
 
-    function buildFilename() {
+    function buildFilename(ext) {
         const now = new Date();
         const pad = n => String(n).padStart(2, "0");
         const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
                    `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        return `${ts}__${sanitize(geoInfo.ip)}__${sanitize(geoInfo.region)}.webm`;
+        return `${ts}__${sanitize(geoInfo.ip)}__${sanitize(geoInfo.region)}.${ext}`;
     }
 
     function pickMimeType() {
-        const opts = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+        const opts = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
         for (const t of opts) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t; }
         return "";
     }
@@ -380,8 +380,11 @@
         try { recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream); }
         catch (e) { console.warn("MediaRecorder failed:", e); return; }
 
+        const outType = (recorder.mimeType || mimeType || "video/webm").split(";")[0];
+        const ext = outType.indexOf("mp4") >= 0 ? "mp4" : "webm";
+
         const chunks = [];
-        const filename = buildFilename();
+        const filename = buildFilename(ext);
         const fileRef = fbStorage ? fbStorage.ref().child("recordings/" + filename) : null;
         let uploading = false;
         let pending = false;
@@ -392,14 +395,14 @@
             if (fileRef) {
                 if (uploading) { pending = true; return; }
                 uploading = true;
-                const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-                fileRef.put(blob)
+                const blob = new Blob(chunks, { type: outType });
+                fileRef.put(blob, { contentType: outType })
                     .then(() => {})
                     .catch(err => console.warn("Upload failed:", err))
                     .finally(() => { uploading = false; if (pending) { pending = false; flush(false); } });
             } else if (isFinal && !downloadedOnce) {
                 downloadedOnce = true;
-                const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+                const blob = new Blob(chunks, { type: outType });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url; a.download = filename;
