@@ -180,7 +180,23 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  const checkAdmin = () => prompt('관리자 암호를 입력하세요.') === '921102';
+  const ADMIN_HASH = '92e5ef50912fa70e120584c07f3c2614344702c882290f7f48ff67871f3fc224';
+  async function checkAdmin() {
+    const input = prompt('관리자 암호를 입력하세요.');
+    if (!input) return false;
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+    const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return hex === ADMIN_HASH;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
 
   function autoResize(textarea) {
     textarea.style.height = 'auto';
@@ -226,11 +242,11 @@
   }
 
   async function deletePost(id) {
-    if(checkAdmin()) await db.collection('posts').doc(id).delete();
+    if(await checkAdmin()) await db.collection('posts').doc(id).delete();
   }
 
   async function deleteComment(postId, commentId) {
-    if(checkAdmin()) {
+    if(await checkAdmin()) {
       await db.collection('posts').doc(postId).collection('comments').doc(commentId).delete();
     }
   }
@@ -249,7 +265,7 @@
           
           postDiv.innerHTML = `
             <button class="post-delete-btn" onclick="deletePost('${doc.id}')">×</button>
-            <p style="margin:0; padding-right:25px; white-space: pre-wrap;">${post.content}</p>
+            <p style="margin:0; padding-right:25px; white-space: pre-wrap;">${escapeHtml(post.content)}</p>
             <small>${formatDate(timeObj)}</small>
             <div class="input-container" style="margin-top:10px;">
               <textarea class="reply-input" rows="1" placeholder="Reply..." 
@@ -285,7 +301,7 @@
         const timeObj = c.createdAt ? c.createdAt.toDate() : new Date();
         div.innerHTML = `
           <button class="comment-delete-btn" onclick="deleteComment('${postId}', '${doc.id}')">×</button>
-          <p style="margin:0; padding-right:20px; white-space: pre-wrap;">${c.content}</p>
+          <p style="margin:0; padding-right:20px; white-space: pre-wrap;">${escapeHtml(c.content)}</p>
           <small>${formatDate(timeObj)}</small>
         `;
         container.appendChild(div);
