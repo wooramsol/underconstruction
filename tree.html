@@ -292,7 +292,7 @@
             }
 
             function scheduleMelody() {
-                let t = ctx.currentTime + 0.05;
+                let t = ctx.currentTime + 0.02;
                 for (const [f, b] of MELODY) {
                     note(t, f, b);
                     t += b * BEAT;
@@ -304,10 +304,20 @@
                 get playing() { return playing; },
                 start() {
                     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    if (ctx.state === 'suspended') ctx.resume();
-                    if (playing) return;
-                    playing = true;
-                    scheduleMelody();
+                    const begin = () => {
+                        if (playing) return;
+                        playing = true;
+                        scheduleMelody();
+                    };
+                    // Safari: only schedule notes once the context is actually running,
+                    // otherwise pre-scheduled notes resume late/unreliably.
+                    if (ctx.state === 'running') {
+                        begin();
+                    } else {
+                        ctx.resume().then(() => {
+                            if (ctx.state === 'running') begin();
+                        }).catch(() => {});
+                    }
                 },
                 stop() {
                     playing = false;
