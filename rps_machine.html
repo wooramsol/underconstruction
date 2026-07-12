@@ -202,9 +202,73 @@
             h2, .score-display { font-size: 1.5rem; }
             #status_text { font-size: 1.2rem; padding-bottom: 15px; }
         }
+
+        #inapp-overlay {
+            position: fixed; inset: 0; z-index: 99999;
+            background: rgba(20,28,38,0.98);
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            text-align: center; padding: 28px; gap: 16px;
+        }
+        #inapp-overlay h2 { font-size: 1.4rem; margin: 0; }
+        #inapp-overlay p { color: #bdc3c7; font-size: 0.95rem; line-height: 1.55; max-width: 340px; margin: 0; }
+        #inapp-overlay .ia-btn {
+            background: #3498db; color: #fff; border: none;
+            padding: 14px 22px; border-radius: 10px; font-size: 1rem;
+            font-weight: bold; cursor: pointer; width: 100%; max-width: 300px;
+        }
+        #inapp-overlay .ia-btn.secondary { background: #46586b; }
+        #inapp-overlay .ia-hint {
+            background: rgba(255,255,255,0.08); border-radius: 10px;
+            padding: 14px 16px; font-size: 0.95rem; color: #ecf0f1;
+            max-width: 320px; line-height: 1.5;
+        }
+        #inapp-overlay .ia-skip {
+            color: #7f8c9a; font-size: 0.8rem; text-decoration: underline;
+            cursor: pointer; margin-top: 4px;
+        }
     </style>
 </head>
 <body>
+
+    <div id="inapp-overlay">
+        <div style="font-size:2.8rem;">🌐</div>
+        <h2>Open in your browser</h2>
+        <p>You're in an in-app browser (like Instagram) that can't record or save your game. Open this page in your normal browser to play properly.</p>
+        <button class="ia-btn" id="ia-open">Open in browser</button>
+        <div class="ia-hint" id="ia-hint-ios" style="display:none;">
+            On iPhone: tap the <b>&bull;&bull;&bull;</b> menu (top-right),<br>then <b>Open in external browser</b>.
+        </div>
+        <button class="ia-btn secondary" id="ia-copy">Copy link</button>
+        <span class="ia-skip" id="ia-skip">Continue anyway</span>
+    </div>
+
+    <script>
+    (function () {
+        var ua = navigator.userAgent || "";
+        var inApp = /Instagram|FBAN|FBAV|FB_IAB|Line\/|KAKAOTALK|NAVER|Threads|Snapchat|TikTok|musical_ly|Twitter|Pinterest/i.test(ua);
+        if (!inApp) return;
+        var isIOS = /iPhone|iPad|iPod/i.test(ua);
+        var ov = document.getElementById("inapp-overlay");
+        ov.style.display = "flex";
+        var openBtn = document.getElementById("ia-open");
+        if (isIOS) {
+            document.getElementById("ia-hint-ios").style.display = "block";
+            openBtn.style.display = "none";
+        } else {
+            openBtn.addEventListener("click", function () {
+                var u = location.host + location.pathname + location.search;
+                location.href = "intent://" + u + "#Intent;scheme=https;package=com.android.chrome;end";
+            });
+        }
+        var copyBtn = document.getElementById("ia-copy");
+        copyBtn.addEventListener("click", function () {
+            if (navigator.clipboard) { navigator.clipboard.writeText(location.href).catch(function () {}); }
+            copyBtn.textContent = "Link copied ✓";
+        });
+        document.getElementById("ia-skip").addEventListener("click", function () { ov.style.display = "none"; });
+    })();
+    </script>
 
     <header>
         <h1>🤖 Unbeatable Rock Paper Scissors Machine</h1>
