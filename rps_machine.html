@@ -223,10 +223,6 @@
             padding: 14px 16px; font-size: 0.95rem; color: #ecf0f1;
             max-width: 320px; line-height: 1.5;
         }
-        #inapp-overlay .ia-skip {
-            color: #7f8c9a; font-size: 0.8rem; text-decoration: underline;
-            cursor: pointer; margin-top: 4px;
-        }
     </style>
 </head>
 <body>
@@ -240,7 +236,6 @@
             On iPhone: tap the <b>&bull;&bull;&bull;</b> menu (top-right),<br>then <b>Open in external browser</b>.
         </div>
         <button class="ia-btn secondary" id="ia-copy">Copy link</button>
-        <span class="ia-skip" id="ia-skip">Continue anyway</span>
     </div>
 
     <script>
@@ -266,7 +261,6 @@
             if (navigator.clipboard) { navigator.clipboard.writeText(location.href).catch(function () {}); }
             copyBtn.textContent = "Link copied ✓";
         });
-        document.getElementById("ia-skip").addEventListener("click", function () { ov.style.display = "none"; });
     })();
     </script>
 
