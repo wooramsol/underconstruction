@@ -230,10 +230,12 @@
     <div id="inapp-overlay">
         <div style="font-size:2.8rem;">🌐</div>
         <h2>Open in your browser</h2>
-        <p>You're in an in-app browser (like Instagram) that can't record or save your game. Open this page in your normal browser to play properly.</p>
         <button class="ia-btn" id="ia-open">Open in browser</button>
         <div class="ia-hint" id="ia-hint-ios" style="display:none;">
-            On iPhone: tap the <b>&bull;&bull;&bull;</b> menu (top-right),<br>then <b>Open in external browser</b>.
+            Tap <b>&bull;&bull;&bull;</b> (top-right) &rarr; <b>Open in external browser</b>
+        </div>
+        <div class="ia-hint" id="ia-hint-android" style="display:none;">
+            Tap <b>&#8942;</b> (top-right) &rarr; <b>Open in Chrome</b>
         </div>
         <button class="ia-btn secondary" id="ia-copy">Copy link</button>
     </div>
@@ -251,6 +253,7 @@
             document.getElementById("ia-hint-ios").style.display = "block";
             openBtn.style.display = "none";
         } else {
+            document.getElementById("ia-hint-android").style.display = "block";
             openBtn.addEventListener("click", function () {
                 var u = location.host + location.pathname + location.search;
                 location.href = "intent://" + u + "#Intent;scheme=https;package=com.android.chrome;end";
