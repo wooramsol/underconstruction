@@ -244,6 +244,7 @@
     (function () {
         var ua = navigator.userAgent || "";
         var inApp = /Instagram|FBAN|FBAV|FB_IAB|Line\/|KAKAOTALK|NAVER|Threads|Snapchat|TikTok|musical_ly|Twitter|Pinterest/i.test(ua);
+        window.__IN_APP__ = inApp;
         if (!inApp) return;
         var isIOS = /iPhone|iPad|iPod/i.test(ua);
         var ov = document.getElementById("inapp-overlay");
@@ -663,7 +664,7 @@
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); }
         });
-        camera.start();
+        if (!window.__IN_APP__) camera.start();
     </script>
 </body>
 </html>
