@@ -34,7 +34,17 @@
         margin: 10px auto;
       }
     </style>
-  </head>
+      <style>
+        /* Site-wide pixel font */
+        @font-face {
+            font-family: 'Coral Pixels';
+            src: url('fonts/CoralPixels-Regular.woff2') format('woff2'),
+                 url('fonts/CoralPixels-Regular.ttf') format('truetype');
+            font-display: swap;
+        }
+        * { font-family: 'Coral Pixels', Arial, sans-serif !important; }
+    </style>
+</head>
 
 <body>
     <h1 style="margin: 50px;"><a href="index.html">Ramsol's Repository</a></h1>
