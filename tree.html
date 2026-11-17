@@ -46,7 +46,8 @@
             box-sizing: border-box;
             padding: 10px 14px;
             font-size: 16px; /* 16px+ stops iOS from zooming on focus */
-            font-family: inherit;
+            /* proportional UI font: a monospace font made every space as wide as a letter */
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
             text-align: center;
             display: block;
             transform-origin: 50% 50%;  /* long text is shrunk with a transform to fit (see fitFieldText) */
@@ -417,7 +418,11 @@
                 const a = hash01(900001, j) * Math.PI * 2;
                 const needle = j % 3 === 0;
                 const d = needle ? 0.12 + 0.12 * (1 - u) : (0.07 * (1 - u) + 0.01) * Math.sqrt(hash01(900002, j));
-                push(bx, needle ? -0.05 : 0, bz, Math.cos(a), 0, Math.sin(a), d, d, 0, 1e6,
+                // appears progressively: about a third of it on a sapling, all of it on the grown tree
+                const rank = hash01(900010, j);
+                const young = 0.38 * S, span = 0.62 * S;
+                const appear = rank < 0.35 ? 0 : young + span * (rank - 0.35) / 0.65;
+                push(bx, needle ? -0.05 : 0, bz, Math.cos(a), 0, Math.sin(a), d * 0.45, d, appear, 1e6,
                     hash01(900007, j) * Math.PI * 2, 0.14 + hash01(900008, j) * 0.03, hash01(900006, j), u,
                     leaderToAt[S] - 1.6 + u, 0.15 + 0.3 * hash01(900009, j), hash01(900003, j), hash01(900004, j), hash01(900005, j));
             }
@@ -471,7 +476,11 @@
                         float vis = smoothstep(aAppear - 0.01, aAppear + 1.0, uStage) * (1.0 - smoothstep(aVanish, aVanish + 1.0, uStage));
                         vec3 center;
                         if (aLeader >= 0.0) {
-                            center = vec3(0.0, mix(uLeaderFrom, uLeaderTo, aLeader), 0.0) + aBase + aDir * aRF;
+                            // the leader grows with the tree: its bend, thickness and number of letters increase
+                            float tg = clamp(uStage / uMaxStage, 0.0, 1.0);
+                            float bendK = 0.25 + 0.75 * tg;
+                            center = vec3(aBase.x * bendK, mix(uLeaderFrom, uLeaderTo, aLeader) + aBase.y, aBase.z * bendK)
+                                   + aDir * mix(aRA, aRF, tg);
                         } else {
                             float t = clamp((uStage - aAppear) / max(1.0, uMaxStage - aAppear), 0.0, 1.0);
                             center = aBase + aDir * mix(aRA, aRF, t);   // branch thickens as it grows
