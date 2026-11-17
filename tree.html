@@ -77,6 +77,8 @@
         const glyphTextures = {};
 
         const MAX_INPUT = 30;
+        const IS_PHONE = Math.min(window.innerWidth, window.innerHeight) < 600;
+        const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, IS_PHONE ? 1.5 : 2); // phones: fewer pixels to fill
         const EXAMPLE_TEXT = 'RAMSOL'; // only a pre-filled example on first load; an empty field = empty tree
 
         const BG_COLOR = new THREE.Color(0x010301);
@@ -93,7 +95,7 @@
             camera.position.set(0, 0.5, 14);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setPixelRatio(PIXEL_RATIO);
             renderer.setClearColor(BG_COLOR, 1);
             document.body.appendChild(renderer.domElement);
 
@@ -122,7 +124,6 @@
             window.addEventListener('resize', scheduleResize);
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', scheduleResize);
-                window.visualViewport.addEventListener('scroll', () => window.scrollTo(0, 0));
             }
         }
 
@@ -151,6 +152,12 @@
             return tex;
         }
 
+        const glyphMaterials = {};
+        function glyphMaterial(char) {
+            return glyphMaterials[char] || (glyphMaterials[char] =
+                new THREE.MeshBasicMaterial({ map: glyphTexture(char), color: 0xffffff, alphaTest: 0.35, side: THREE.DoubleSide }));
+        }
+
         const planeGeo = new THREE.PlaneGeometry(1, 1);
         const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
         const UP = new THREE.Vector3(0, 1, 0);
@@ -161,7 +168,7 @@
             items.forEach((it) => { if (!byChar.has(it.char)) byChar.set(it.char, []); byChar.get(it.char).push(it); });
             const meshes = [];
             byChar.forEach((list, char) => {
-                const mat = new THREE.MeshBasicMaterial({ map: glyphTexture(char), color: 0xffffff, alphaTest: 0.35, side: THREE.DoubleSide });
+                const mat = glyphMaterial(char);
                 const mesh = new THREE.InstancedMesh(planeGeo, mat, list.length);
                 list.forEach((it, i) => {
                     _p.set(it.x, it.y, it.z);
@@ -181,7 +188,8 @@
         }
 
         function disposeMeshes(list) {
-            list.forEach((m) => { m.parent && m.parent.remove(m); m.material.dispose(); m.dispose && m.dispose(); });
+            // materials/textures are cached per letter and reused; only the instance buffers are freed
+            list.forEach((m) => { m.parent && m.parent.remove(m); m.dispose && m.dispose(); });
         }
 
         // Positions and colors are generated once; typing only swaps which letter each spot shows.
@@ -498,7 +506,8 @@
             input.addEventListener('input', () => {
                 if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
                 autoGrow();
-                clearTimeout(timer); timer = setTimeout(apply, 120);
+                // rebuild once typing pauses briefly, so fast typing (and 한글 IME steps) stays smooth
+                clearTimeout(timer); timer = setTimeout(apply, 220);
             });
             input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
             requestAnimationFrame(autoGrow);
@@ -553,7 +562,7 @@
             const key = W + 'x' + h + '@' + top;
             if (key === lastLayout) return;
             lastLayout = key;
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setPixelRatio(PIXEL_RATIO);
             renderer.setSize(W, h);
             renderer.domElement.style.top = top + 'px';
             camera.aspect = W / h;
