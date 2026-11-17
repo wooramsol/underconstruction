@@ -88,6 +88,16 @@
             color: #aaffaa; opacity: 0; transition: opacity .2s; pointer-events: none;
         }
         #copy-toast.show { opacity: 1; }
+        #controls-hint {
+            position: fixed; right: 12px; bottom: max(14px, env(safe-area-inset-bottom));
+            z-index: 10; pointer-events: none;
+            text-align: right; line-height: 1.5;
+            font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #3f7f3f;
+            transition: opacity .6s;
+        }
+        #controls-hint b { color: #6fbf6f; font-weight: 600; }
+        #controls-hint.used { opacity: .45; }   /* fades back once you've tried it */
         #tap-hint {
             position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom));
             transform: translateX(-50%);
@@ -124,6 +134,7 @@
 </head>
 <body>
     <div id="tap-hint">tap to play ♪</div>
+    <div id="controls-hint" aria-hidden="true"></div>
     <div id="tree-text-wrap">
         <div class="tree-row">
             <div class="field-box"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"><span class="fake-caret" aria-hidden="true"></span></div>
@@ -175,7 +186,6 @@
         }
         const IS_PHONE = Math.min(window.innerWidth, window.innerHeight) < 600;
         const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, IS_PHONE ? 1.5 : 2); // phones: fewer pixels to fill
-        const EXAMPLE_TEXT = 'RAMSOL'; // only a pre-filled example on first load; an empty field = empty tree
 
         const BG_COLOR = new THREE.Color(0x010301);
         const COLOR_BOTTOM = new THREE.Color(0x0f400f);
@@ -798,8 +808,8 @@
             try {
                 const q = new URLSearchParams(location.search);
                 if (q.has('m')) return unpackText(q.get('m'));
-                return q.has('text') ? q.get('text') : EXAMPLE_TEXT;
-            } catch (e) { return EXAMPLE_TEXT; }
+                return q.has('text') ? q.get('text') : '';   // first visit: empty field, a small tree of dots
+            } catch (e) { return ''; }
         }
 
         // Single-line field (a multi-line textarea made iPhones stutter on every key).
@@ -852,7 +862,7 @@
             const saveUrl = () => {
                 try {
                     const v = input.value.trim();
-                    if (v === EXAMPLE_TEXT && !/[?&]seed=/.test(location.search)) return; // keep a clean URL for the example
+                    if (v === '' && !/[?&](seed|text|m)=/.test(location.search)) return; // keep a clean URL until something is typed
                     history.replaceState(null, '', shareUrl());
                 } catch (e) {}
             };
@@ -1075,6 +1085,16 @@
         }
         tryStart();
         UNLOCK_EVENTS.forEach((evt) => window.addEventListener(evt, tryStart, true));
+        // corner hint: how to rotate / zoom (mouse vs touch wording)
+        (function controlsHint() {
+            const el = document.getElementById('controls-hint');
+            const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+            el.innerHTML = touch
+                ? '<b>drag</b> to rotate<br><b>pinch</b> to zoom'
+                : '<b>drag</b> to rotate<br><b>scroll</b> to zoom';
+            controls.addEventListener('start', () => el.classList.add('used'), { once: true });
+        })();
+
         // small "tap to play" hint while the browser is still holding the sound back
         const tapHint = document.getElementById('tap-hint');
         setTimeout(() => { if (!music.running()) tapHint.classList.add('show'); }, 600);
