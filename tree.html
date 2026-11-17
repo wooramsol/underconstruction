@@ -119,9 +119,9 @@
             onResize();
             animate();
 
-            window.addEventListener('resize', onResize);
+            window.addEventListener('resize', scheduleResize);
             if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', onResize);
+                window.visualViewport.addEventListener('resize', scheduleResize);
                 window.visualViewport.addEventListener('scroll', () => window.scrollTo(0, 0));
             }
         }
@@ -488,10 +488,12 @@
             };
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
             // the field grows to show everything you typed (no cut-off), then the tree area is re-fitted
+            let lastFieldH = 0;
             const autoGrow = () => {
                 input.style.height = 'auto';
-                input.style.height = input.scrollHeight + 'px';
-                onResize();
+                const fh = input.scrollHeight;
+                input.style.height = fh + 'px';
+                if (fh !== lastFieldH) { lastFieldH = fh; scheduleResize(); } // only when a line is added/removed
             };
             input.addEventListener('input', () => {
                 if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
@@ -532,6 +534,13 @@
         // The tree lives in the space between the text field and the bottom of the *visible* screen.
         // On phones the visible area shrinks when the keyboard opens, so the tree shrinks with it
         // instead of being pushed off the top.
+        let lastLayout = '';
+        let resizeQueued = false;
+        function scheduleResize() {           // coalesce bursts (keyboard animation, typing) into one per frame
+            if (resizeQueued) return;
+            resizeQueued = true;
+            requestAnimationFrame(() => { resizeQueued = false; onResize(); });
+        }
         function onResize() {
             const vv = window.visualViewport;
             const W = window.innerWidth;
@@ -539,6 +548,11 @@
             const wrap = document.getElementById('tree-text-wrap');
             const top = Math.round(wrap.getBoundingClientRect().bottom + 8);
             const h = Math.max(120, H - top);
+            // Resizing the WebGL canvas reallocates its buffers, which is slow on phones:
+            // only do it when the size really changed.
+            const key = W + 'x' + h + '@' + top;
+            if (key === lastLayout) return;
+            lastLayout = key;
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(W, h);
             renderer.domElement.style.top = top + 'px';
