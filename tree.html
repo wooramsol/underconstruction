@@ -72,7 +72,7 @@
         let starMeshes = [];
         const glyphTextures = {};
 
-        const MAX_INPUT = 30;
+        const MAX_INPUT = 20;
         const IS_PHONE = Math.min(window.innerWidth, window.innerHeight) < 600;
         const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, IS_PHONE ? 1.5 : 2); // phones: fewer pixels to fill
         const EXAMPLE_TEXT = 'RAMSOL'; // only a pre-filled example on first load; an empty field = empty tree
@@ -402,16 +402,24 @@
                         by, 0, hash01(i, jj * 7 + 6), hash01(i + 7, jj), hash01(i + 13, jj));
                 }
             }
-            // leader: slim central shoot from the crown into the star; follows the growth via uniforms
-            const LEADER = 120;
+            // leader: slim central shoot from the crown into the star; follows the growth via uniforms.
+            // Sparse, slightly dimmed like the other branches, and gently bent at random (it still meets
+            // the star at the top and the crown at the bottom).
+            const LEADER = 55;
+            const bendA = 0.12 + Math.random() * 0.18, bendDir = Math.random() * Math.PI * 2;
+            const wigA = 0.04 + Math.random() * 0.05, wigPh = Math.random() * Math.PI * 2;
             for (let j = 0; j < LEADER; j++) {
                 const u = j / (LEADER - 1);
+                const bend = bendA * Math.sin(Math.PI * u);
+                const wig = wigA * Math.sin(2 * Math.PI * u + wigPh) * Math.sin(Math.PI * u);
+                const bx = Math.cos(bendDir) * bend - Math.sin(bendDir) * wig;
+                const bz = Math.sin(bendDir) * bend + Math.cos(bendDir) * wig;
                 const a = hash01(900001, j) * Math.PI * 2;
                 const needle = j % 3 === 0;
                 const d = needle ? 0.12 + 0.12 * (1 - u) : (0.07 * (1 - u) + 0.01) * Math.sqrt(hash01(900002, j));
-                push(0, needle ? -0.05 : 0, 0, Math.cos(a), 0, Math.sin(a), d, d, 0, 1e6,
+                push(bx, needle ? -0.05 : 0, bz, Math.cos(a), 0, Math.sin(a), d, d, 0, 1e6,
                     hash01(900007, j) * Math.PI * 2, 0.14 + hash01(900008, j) * 0.03, hash01(900006, j), u,
-                    leaderToAt[S] - 1 + u, 0, hash01(900003, j), hash01(900004, j), hash01(900005, j));
+                    leaderToAt[S] - 1.6 + u, 0.15 + 0.3 * hash01(900009, j), hash01(900003, j), hash01(900004, j), hash01(900005, j));
             }
 
             // one instanced mesh for the whole tree, one draw call
@@ -545,7 +553,7 @@
             const key = glyphs.join('\u0001');
             if (key !== lastGlyphKey) { lastGlyphKey = key; drawAtlas(glyphs); }
             treeMat.uniforms.uCount.value = glyphs.length;
-            // growth stage: nothing typed = a young sapling, 30 letters = fully grown (animated in animate())
+            // growth stage: nothing typed = a young sapling, 20 letters = fully grown (animated in animate())
             const c = Math.pow(Math.min(chars.length, MAX_INPUT) / MAX_INPUT, 0.75);
             stageTarget = (0.38 + 0.62 * c) * maxBirth;
             if (!stageNow) stageNow = stageTarget;
@@ -659,7 +667,7 @@
 
         function setupInput() {
             const input = document.getElementById('tree-text');
-            input.maxLength = 40;   // 30 letters + some spaces
+            input.maxLength = MAX_INPUT;   // keeps the text readable in one line
             input.value = initialText();
             let timer = 0, urlTimer = 0;
             const saveUrl = () => {
