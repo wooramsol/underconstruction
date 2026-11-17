@@ -647,8 +647,10 @@
             input.maxLength = MAX_INPUT * 2;
             input.value = initialText();
             let timer = 0;
-            const apply = () => {
-                setTreeText(input.value);
+            let urlTimer = 0;
+            const saveUrl = () => {
+                if (!PERF.url) return;
+                const t0 = performance.now();
                 try {
                     const url = new URL(location.href);
                     const v = input.value.trim();
@@ -656,12 +658,24 @@
                     else url.searchParams.set('text', v);                   // '' is kept too, so a reload stays empty
                     history.replaceState(null, '', url);
                 } catch (e) {}
+                perfLog('url', performance.now() - t0);
+            };
+            const apply = () => {
+                if (PERF.tree) {
+                    const t0 = performance.now();
+                    setTreeText(input.value);
+                    perfLog('tree', performance.now() - t0);
+                }
+                // Safari slows down / blocks frequent history.replaceState calls, so only save the
+                // text to the URL once typing has stopped for a moment.
+                clearTimeout(urlTimer); urlTimer = setTimeout(saveUrl, 1200);
             };
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
             // the field grows to show everything you typed (no cut-off), then the tree area is re-fitted
             let lastFieldH = 0;
             let lastLen = -1;
             const autoGrow = () => {
+                if (!PERF.grow) return;
                 if (input.value.length === lastLen) return;
                 lastLen = input.value.length;
                 input.style.height = 'auto';
@@ -670,6 +684,7 @@
                 if (fh !== lastFieldH) { lastFieldH = fh; scheduleResize(); } // only when a line is added/removed
             };
             input.addEventListener('input', () => {
+                perfLog('key', 0);
                 if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
                 autoGrow();
                 // updates are cheap now (a few GPU numbers), so react almost immediately
@@ -722,12 +737,16 @@
                 });
             }
 
-            renderer.render(scene, camera);
+            if (PERF.render) renderer.render(scene, camera);
         }
 
         // The tree lives in the space between the text field and the bottom of the *visible* screen.
         // On phones the visible area shrinks when the keyboard opens, so the tree shrinks with it
         // instead of being pushed off the top.
+        // switches used by the test mode (?test=1) to turn parts off one by one
+        const PERF = { tree: true, url: true, grow: true, render: true, resize: true };
+        const perfEvents = [];
+        function perfLog(what, ms) { if (perfEvents.length < 400) perfEvents.push([performance.now(), what, ms]); }
         let lastLayout = '';
         let typingMode = false;   // phone keyboard open: render lighter so the keyboard stays responsive
         let resizeQueued = false;
@@ -737,6 +756,12 @@
             requestAnimationFrame(() => { resizeQueued = false; onResize(); });
         }
         function onResize() {
+            if (!PERF.resize && lastLayout) return;
+            const t0 = performance.now();
+            onResizeInner();
+            perfLog('resize', performance.now() - t0);
+        }
+        function onResizeInner() {
             const vv = window.visualViewport;
             const W = window.innerWidth;
             const H = vv ? vv.height : window.innerHeight;
@@ -773,7 +798,15 @@
                     <button data-a="auto">auto add (0.4s)</button>
                     <button data-a="clear">clear</button>
                     <button data-a="reset">reset worst</button>
-                </div>`;
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+                    <button data-t="tree">tree update: ON</button>
+                    <button data-t="url">URL save: ON</button>
+                    <button data-t="grow">field grow: ON</button>
+                    <button data-t="resize">resize: ON</button>
+                    <button data-t="render">3D render: ON</button>
+                </div>
+                <div id="pt-log" style="margin-top:6px;white-space:pre;max-height:96px;overflow:auto;color:#ccc"></div>`;
             box.querySelectorAll('button').forEach((b) => (b.style.cssText = 'font:13px monospace;padding:8px 10px;background:#0f400f;color:#aaffaa;border:1px solid #3f7f3f;border-radius:4px'));
             document.body.appendChild(box);
             ['pointerdown', 'touchstart', 'keydown'].forEach((e) => box.addEventListener(e, (ev) => ev.stopPropagation()));
@@ -783,6 +816,13 @@
             const setText = (t) => { input.value = t; input.dispatchEvent(new Event('input')); };
             let auto = 0;
             box.addEventListener('click', (e) => {
+                const t = e.target.dataset && e.target.dataset.t;
+                if (t) {
+                    PERF[t] = !PERF[t];
+                    e.target.textContent = e.target.textContent.replace(/ON|OFF/, PERF[t] ? 'ON' : 'OFF');
+                    e.target.style.background = PERF[t] ? '#0f400f' : '#5a1010';
+                    return;
+                }
                 const a = e.target.dataset && e.target.dataset.a;
                 if (!a) return;
                 const addOne = () => setText(input.value + pool[Math.floor(Math.random() * pool.length)]);
@@ -804,11 +844,20 @@
             const stats = document.getElementById('pt-stats');
             const hist = [];
             let last = performance.now(), worst = 0, frames = 0, tSec = last, fps = 0;
+            const longLog = [];
             (function tick() {
                 const now = performance.now(), dt = now - last;
                 last = now;
                 hist.push(dt); if (hist.length > 150) hist.shift();
                 worst = Math.max(worst, dt);
+                if (dt > 34) {
+                    const since = perfEvents.filter((ev) => ev[0] > now - dt - 1).map((ev) => `${ev[1]} ${ev[2].toFixed(1)}ms`);
+                    const vv = window.visualViewport;
+                    longLog.unshift(`${(now / 1000).toFixed(1)}s  frame ${dt.toFixed(0)}ms  vv ${vv ? Math.round(vv.height) : '-'}  ${since.join(', ') || '(no work of ours)'}`);
+                    longLog.length = Math.min(longLog.length, 12);
+                    document.getElementById('pt-log').textContent = longLog.join('\n');
+                }
+                if (perfEvents.length > 300) perfEvents.splice(0, 200);
                 frames++;
                 if (now - tSec >= 1000) { fps = frames * 1000 / (now - tSec); frames = 0; tSec = now; }
                 const over = hist.filter((d) => d > 34).length;
