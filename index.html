@@ -222,13 +222,13 @@
             return t ? ` width="${t[1]}" height="${t[2]}"` : '';
         }
 
-        // .mp4 entries render as a muted, looping autoplay video (poster = same name .webp → poster.webp)
+        // .mp4 entries render as a muted, looping video that only loads/plays while on screen (see setupLazyVideos)
         function mediaTag(p, img, pIdx) {
             if (img.endsWith('.mp4')) {
                 const src = `${p.folder}/${img}`;
                 const poster = p.poster ? ` poster="${p.folder}/${p.poster}"` : '';
                 const size = p.mediaSize ? ` width="${p.mediaSize[0]}" height="${p.mediaSize[1]}"` : '';
-                return `<video src="${src}"${poster}${size} title="${p.title}" class="mousehover" autoplay muted loop playsinline preload="${pIdx < 2 ? 'auto' : 'metadata'}"></video>`;
+                return `<video data-src="${src}"${poster}${size} title="${p.title}" class="mousehover lazy-video" muted loop playsinline preload="none"></video>`;
             }
             return `<img src="${imgSrc(p, img)}"${imgSizeAttrs(p, img)} title="${p.title}" class="mousehover" loading="${pIdx < 2 ? 'eager' : 'lazy'}">`;
         }
@@ -249,6 +249,28 @@
                 <hr>
             `).join('');
             attachTooltipEvents();
+            setupLazyVideos();
+        }
+
+        // Load a video only when it scrolls near the viewport; play while visible, pause when off-screen.
+        function setupLazyVideos() {
+            const videos = document.querySelectorAll('video.lazy-video');
+            const start = (v) => {
+                // WebKit ignores the muted attribute on innerHTML-created videos; set it explicitly
+                v.muted = true;
+                v.defaultMuted = true;
+                if (!v.src) { v.src = v.dataset.src; }
+                const p = v.play();
+                if (p) p.catch(() => {});
+            };
+            if (!('IntersectionObserver' in window)) { videos.forEach(start); return; }
+            const io = new IntersectionObserver((entries) => {
+                entries.forEach((e) => {
+                    if (e.isIntersecting) start(e.target);
+                    else if (e.target.src) e.target.pause();
+                });
+            }, { rootMargin: '200px 0px', threshold: 0.01 });
+            videos.forEach((v) => io.observe(v));
         }
 
         function attachTooltipEvents() {
