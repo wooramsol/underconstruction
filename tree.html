@@ -927,7 +927,8 @@
             input.addEventListener('compositionend', () => { enforce(); input.dispatchEvent(new Event('input')); });
             const guide = document.getElementById('type-guide');
             input.addEventListener('input', (e) => {
-                if (e.isTrusted) guide.classList.add('typed');
+                // calm once you've typed; blinking again whenever the field is empty
+                guide.classList.toggle('typed', input.value.trim() !== '' && (e.isTrusted || guide.classList.contains('typed')));
                 if (!e.isComposing) enforce();
                 fitFieldText(input);
                 clearTimeout(timer); timer = setTimeout(apply, 50);
