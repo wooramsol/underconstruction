@@ -53,11 +53,11 @@
             outline: none;
         }
         #tree-text:focus { border-color: #aaffaa; }
-        #tree-text::placeholder { color: #3f7f3f; }
+        #tree-text::placeholder { color: #3f7f3f; font-size: 14px; }
     </style>
 </head>
 <body>
-    <div id="tree-text-wrap"><input id="tree-text" type="text" placeholder="RAMSOL" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></div>
+    <div id="tree-text-wrap"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -71,6 +71,7 @@
 
         const DEFAULT_CHARS = ['R', 'A', 'M', 'S', 'O', 'L', '*'];
         const MAX_INPUT = 30;
+        const DEFAULT_TEXT = 'RAMSOL'; // pre-filled in the text field on first load
 
         const BG_COLOR = new THREE.Color(0x010301);
         const COLOR_BOTTOM = new THREE.Color(0x0f400f);
@@ -258,7 +259,7 @@
 
         // ---- Text field: live rebuild while typing; the text is kept in the URL (?text=) so a tree can be shared.
         function initialText() {
-            try { return new URLSearchParams(location.search).get('text') || ''; } catch (e) { return ''; }
+            try { return new URLSearchParams(location.search).get('text') || DEFAULT_TEXT; } catch (e) { return DEFAULT_TEXT; }
         }
 
         function setupInput() {
@@ -270,7 +271,7 @@
                 setTreeText(input.value);
                 try {
                     const url = new URL(location.href);
-                    if (input.value.trim()) url.searchParams.set('text', input.value.trim());
+                    if (input.value.trim() && input.value.trim() !== DEFAULT_TEXT) url.searchParams.set('text', input.value.trim());
                     else url.searchParams.delete('text');
                     history.replaceState(null, '', url);
                 } catch (e) {}
