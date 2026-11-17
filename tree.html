@@ -25,16 +25,18 @@
             font-family: 'Courier New', monospace;
             touch-action: none; 
         }
-        canvas { 
+        html, body { height: 100%; }
+        body { position: fixed; inset: 0; } /* keep iOS from scrolling the page when the keyboard opens */
+        canvas {
             display: block;
-            width: 100%;
-            height: 100%;
+            position: fixed;
+            left: 0;
             outline: none;
         }
         #tree-text-wrap {
             position: fixed;
             left: 50%;
-            bottom: max(24px, env(safe-area-inset-bottom));
+            top: max(16px, env(safe-area-inset-top));   /* text field on top, tree right below it */
             transform: translateX(-50%);
             z-index: 10;
             width: min(320px, calc(100vw - 40px));
@@ -46,6 +48,12 @@
             font-size: 16px; /* 16px+ stops iOS from zooming on focus */
             font-family: inherit;
             text-align: center;
+            line-height: 1.35;
+            resize: none;
+            overflow: hidden;
+            display: block;
+            white-space: pre-wrap;
+            word-break: break-all;      /* long words / 한글 wrap instead of being cut off */
             color: #aaffaa;
             background: rgba(1, 3, 1, 0.75);
             border: 1px solid #0f400f;
@@ -57,7 +65,7 @@
     </style>
 </head>
 <body>
-    <div id="tree-text-wrap"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></div>
+    <div id="tree-text-wrap"><textarea id="tree-text" rows="1" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></textarea></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -86,7 +94,6 @@
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(BG_COLOR, 1);
             document.body.appendChild(renderer.domElement);
 
@@ -109,10 +116,14 @@
             setTreeText(initialText());
             createOptimizedStar();
             setupInput();
-            fitCamera();
+            onResize();
             animate();
 
             window.addEventListener('resize', onResize);
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', onResize);
+                window.visualViewport.addEventListener('scroll', () => window.scrollTo(0, 0));
+            }
         }
 
         // ---- Letters are drawn onto small canvases with the device's own fonts, so any
@@ -398,13 +409,17 @@
             const top = 0.8 + FIT_TOP + 0.35 + 1.2;   // leader + star above the tallest point (treeGroup is raised by 0.8)
             const bottom = 0.8 + GROUND - 0.3;
             const halfW = FIT_R * 1.08;               // a little extra for perspective
-            const reserve = 1.6;                      // room for the text field at the bottom
+            const reserve = 0.2;                      // the text field is above the canvas now
             const halfH = (top - bottom + reserve) / 2;
             const centerY = (top + bottom - reserve) / 2;
             const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
             const dist = Math.max(halfH / tanHalf, halfW / (tanHalf * camera.aspect)) * 1.04;
-            controls.target.set(0, centerY, 0);
-            camera.position.set(0, centerY, dist);
+            // If the screen is tall (width is the limit), keep the tree right under the text field
+            // and leave the spare room at the bottom.
+            const visibleHalfH = dist * tanHalf;
+            const camY = Math.min(centerY, top + 0.15 - visibleHalfH);
+            controls.target.set(0, camY, 0);
+            camera.position.set(0, camY, dist);
             controls.maxDistance = Math.max(30, dist * 1.5);
             controls.update();
         }
@@ -472,7 +487,19 @@
                 } catch (e) {}
             };
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
-            input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(apply, 120); });
+            // the field grows to show everything you typed (no cut-off), then the tree area is re-fitted
+            const autoGrow = () => {
+                input.style.height = 'auto';
+                input.style.height = input.scrollHeight + 'px';
+                onResize();
+            };
+            input.addEventListener('input', () => {
+                if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
+                autoGrow();
+                clearTimeout(timer); timer = setTimeout(apply, 120);
+            });
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+            requestAnimationFrame(autoGrow);
             // keep the 3D controls from reacting while typing
             ['pointerdown', 'touchstart', 'keydown'].forEach((e) => input.addEventListener(e, (ev) => ev.stopPropagation()));
         }
@@ -502,11 +529,21 @@
             renderer.render(scene, camera);
         }
 
+        // The tree lives in the space between the text field and the bottom of the *visible* screen.
+        // On phones the visible area shrinks when the keyboard opens, so the tree shrinks with it
+        // instead of being pushed off the top.
         function onResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            const vv = window.visualViewport;
+            const W = window.innerWidth;
+            const H = vv ? vv.height : window.innerHeight;
+            const wrap = document.getElementById('tree-text-wrap');
+            const top = Math.round(wrap.getBoundingClientRect().bottom + 8);
+            const h = Math.max(120, H - top);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(W, h);
+            renderer.domElement.style.top = top + 'px';
+            camera.aspect = W / h;
+            camera.updateProjectionMatrix();
             fitCamera();
         }
 
