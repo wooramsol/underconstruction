@@ -72,7 +72,6 @@
 
     <script>
         let scene, camera, renderer, treeGroup, starGroup, controls;
-        let treeMeshes = [];
         let starMeshes = [];
         const glyphTextures = {};
 
@@ -311,155 +310,260 @@
             return Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
         }
 
-        const GLYPH_BUDGET = Math.min(window.innerWidth, window.innerHeight) < 600 ? 12000 : 18000;
+        // ================= GPU-driven growth =================
+        // Everything the tree can ever show is built ONCE at load: every letter of every growth stage,
+        // with the stage it appears in (and, for needles, the stage it falls off). Typing then only
+        // changes a few numbers sent to the GPU (the growth stage, how many letters there are) and redraws
+        // a tiny texture with the typed letters. No geometry is rebuilt and nothing big is uploaded while
+        // typing, so the animation keeps running smoothly even on phones. The stage also animates, so the
+        // tree visibly grows / shrinks instead of jumping.
+        const GLYPH_BUDGET = IS_PHONE ? 11000 : 17000;
+        const ATLAS_CELL = 128, ATLAS_COLS = 8, ATLAS_ROWS = 4;          // 32 letter slots, each drawn once
+        let treeMesh = null, treeMat = null, atlasTex = null, atlasCtx = null;
+        let stageTarget = 0, stageNow = 0;
+        let leaderFromAt = [], leaderToAt = [];
 
-        function setTreeText(text) {
-            const chars = textToChars(text);
-            const glyphs = chars.length ? chars : ['.'];
-            // growth stage: nothing typed = a young sapling, 30 letters = fully grown
-            const c = Math.pow(Math.min(chars.length, MAX_INPUT) / MAX_INPUT, 0.75);
-            const stage = Math.round((0.38 + 0.62 * c) * maxBirth);
+        function buildGrowth() {
+            const N = nodes.length, S = maxBirth;
+            const radiusOf = (cnt) => Math.min(0.5, 0.02 * Math.pow(cnt, 0.42));
 
-            // nodes that exist at this stage form a connected tree (children always appear after parents)
-            const N = nodes.length;
-            const shown = new Uint8Array(N);
-            const count = new Float32Array(N);            // twigs carried by each branch (pipe model)
-            for (let i = 0; i < N; i++) if (nodes[i].birth <= stage) { shown[i] = 1; count[i] = 1; }
-            for (let i = N - 1; i > 0; i--) if (shown[i]) count[nodes[i].parent] += count[i];
-
-            // radius of each branch: thin twigs, thick trunk; grows as more twigs are carried
-            const radius = (i) => Math.min(0.5, 0.02 * Math.pow(count[i], 0.42));
-
-            // how many letters each segment gets (thicker = more letters), scaled to the budget
-            const want = new Float32Array(N);
-            let total = 0;
-            for (let i = 1; i < N; i++) {
-                if (!shown[i]) continue;
-                const r = radius(i);
-                want[i] = 2.5 + r * 45 + (count[i] <= 3 ? 7 : 0); // + needles around young tips
-                total += want[i];
+            // replay growth stage by stage: twigs carried per branch (pipe model), radius per stage
+            const cnt = new Float32Array(N);
+            const rAt = new Float32Array(N * (S + 1));
+            const tipEnd = new Float32Array(N).fill(1e6);   // stage when a tip stops being a tip
+            const byBirth = Array.from({ length: S + 1 }, () => []);
+            nodes.forEach((n, i) => { if (i > 0) byBirth[n.birth].push(i); });
+            let top = GROUND, allTop = GROUND;
+            for (let st = 0; st <= S; st++) {
+                for (const i of byBirth[st]) {
+                    for (let j = i; j > 0; j = nodes[j].parent) cnt[j] += 1;
+                    const n = nodes[i];
+                    if (n.y > top && Math.abs(n.x) < 0.6 && Math.abs(n.z) < 0.6) top = n.y;
+                    if (n.y > allTop) allTop = n.y;
+                }
+                for (let i = 1; i < N; i++) {
+                    if (nodes[i].birth > st) continue;
+                    rAt[i * (S + 1) + st] = radiusOf(cnt[i]);
+                    if (cnt[i] > 3 && tipEnd[i] > st) tipEnd[i] = st;
+                }
+                leaderFromAt[st] = Math.min(top, allTop - 1.2);
+                leaderToAt[st] = allTop + 0.35;
             }
-            const scale = Math.min(1, GLYPH_BUDGET / total);
 
-            gReset(glyphs);
-            let top = GROUND, allTop = GROUND;   // highest shoot near the axis / anywhere
+            // letters per branch segment: more on thick wood; scaled so the grown tree fits the budget
+            const want = (r) => 2.5 + r * 45;
+            let finalTotal = 0;
+            for (let i = 1; i < N; i++) finalTotal += want(rAt[i * (S + 1) + S]);
+            const scale = Math.min(1, GLYPH_BUDGET / finalTotal);
+            const kAt = (i, st) => Math.max(1, Math.round(want(rAt[i * (S + 1) + st]) * scale));
+
+            const A = { base: [], dir: [], rA: [], rF: [], appear: [], vanish: [], rot: [], size: [], pick: [], color: [], leader: [] };
+            const col = new THREE.Color();
+            const push = (bx, by, bz, dx, dy, dz, rA, rF, appear, vanish, rot, size, pick, leader, cy, wood, h1, h2, h3) => {
+                A.base.push(bx, by, bz); A.dir.push(dx, dy, dz);
+                A.rA.push(rA); A.rF.push(rF); A.appear.push(appear); A.vanish.push(vanish);
+                A.rot.push(rot); A.size.push(size); A.pick.push(pick); A.leader.push(leader);
+                colorAt(col, cy, wood, h1, h2, h3);
+                A.color.push(col.r, col.g, col.b);
+            };
+
             for (let i = 1; i < N; i++) {
-                if (!shown[i]) continue;
-                const n = nodes[i], p = nodes[n.parent];
-                if (n.y > top && Math.abs(n.x) < 0.6 && Math.abs(n.z) < 0.6) top = n.y;
-                if (n.y > allTop) allTop = n.y;
-                const r = radius(i);
-                const isTip = count[i] <= 3;
-                const k = Math.max(1, Math.round(want[i] * scale));
-                // segment direction, used to scatter letters around (not along) the branch
+                const n = nodes[i], p = nodes[n.parent], b = n.birth;
                 const sx = n.x - p.x, sy = n.y - p.y, sz = n.z - p.z;
                 const sl = Math.hypot(sx, sy, sz) || 1;
-                for (let j = 0; j < k; j++) {
-                    const u = hash01(i, j * 7 + 1);
-                    // random direction, minus its component along the branch
+                const perp = (j) => {            // random unit direction around the branch
                     let ox = hash01(i, j * 7 + 2) * 2 - 1, oy = hash01(i, j * 7 + 3) * 2 - 1, oz = hash01(i, j * 7 + 4) * 2 - 1;
                     const dot = (ox * sx + oy * sy + oz * sz) / sl;
                     ox -= dot * sx / sl; oy -= dot * sy / sl; oz -= dot * sz / sl;
                     const ol = Math.hypot(ox, oy, oz) || 1;
-                    const needle = isTip && j >= k * 0.4;
-                    const spread = needle ? 0.3 : r;
-                    const d = spread * Math.sqrt(hash01(i, j * 7 + 5));
-                    const x = p.x + sx * u + (ox / ol) * d;
-                    const y = p.y + sy * u + (oy / ol) * d - (needle ? 0.06 : 0);
-                    const z = p.z + sz * u + (oz / ol) * d;
-                    colorAt(_col, y, needle ? 0 : r * 1.6, hash01(i, j * 7 + 6), hash01(i + 7, j), hash01(i + 13, j));
-                    gEmit(Math.floor(hash01(i + 3, j * 5) * glyphs.length), x, y, z,
-                        hash01(i + 5, j) * Math.PI * 2, 0.15 + hash01(i + 9, j) * 0.04, _col);
+                    return [ox / ol, oy / ol, oz / ol];
+                };
+                // wood: the j-th letter on this segment appears once the branch is thick enough to carry it
+                const kF = kAt(i, S);
+                const rF = rAt[i * (S + 1) + S];
+                for (let j = 0; j < kF; j++) {
+                    let ap = b;
+                    while (ap < S && kAt(i, ap) <= j) ap++;
+                    const u = hash01(i, j * 7 + 1);
+                    const [dx, dy, dz] = perp(j);
+                    const m = Math.sqrt(hash01(i, j * 7 + 5));
+                    const by = p.y + sy * u;
+                    push(p.x + sx * u, by, p.z + sz * u, dx * m, dy * m, dz * m,
+                        rAt[i * (S + 1) + ap], rF, ap, 1e6,
+                        hash01(i + 5, j) * Math.PI * 2, 0.15 + hash01(i + 9, j) * 0.04, hash01(i + 3, j * 5), -1,
+                        by, rF * 1.6, hash01(i, j * 7 + 6), hash01(i + 7, j), hash01(i + 13, j));
+                }
+                // needles around young tips; they drop off once the tip has grown into a branch
+                for (let j = 0; j < 6; j++) {
+                    const jj = 100 + j;
+                    const u = hash01(i, jj * 7 + 1);
+                    const [dx, dy, dz] = perp(jj);
+                    const m = 0.3 * Math.sqrt(hash01(i, jj * 7 + 5));
+                    const by = p.y + sy * u - 0.06;
+                    push(p.x + sx * u, by, p.z + sz * u, dx * m, dy * m, dz * m, 1, 1, b, tipEnd[i],
+                        hash01(i + 5, jj) * Math.PI * 2, 0.15 + hash01(i + 9, jj) * 0.04, hash01(i + 3, jj * 5), -1,
+                        by, 0, hash01(i, jj * 7 + 6), hash01(i + 7, jj), hash01(i + 13, jj));
                 }
             }
-            // Leader: a slim central shoot that always runs from the crown up into the star.
-            const STAR_GAP = 0.35;                      // star sits this far above the tallest shoot
-            const leaderFrom = Math.min(top, allTop - 1.2), leaderTo = allTop + STAR_GAP; // starts inside the crown
-            const leaderN = Math.round((leaderTo - leaderFrom) / 0.06);
-            for (let j = 0; j < leaderN; j++) {
-                const u = j / (leaderN - 1);
-                const y = leaderFrom + (leaderTo - leaderFrom) * u;
-                const r = 0.07 * (1 - u) + 0.01;      // tapers toward the star
+            // leader: slim central shoot from the crown into the star; follows the growth via uniforms
+            const LEADER = 120;
+            for (let j = 0; j < LEADER; j++) {
+                const u = j / (LEADER - 1);
                 const a = hash01(900001, j) * Math.PI * 2;
-                const needle = j % 3 === 0;           // a few short needles along the way
-                const d = needle ? 0.12 + 0.12 * (1 - u) : r * Math.sqrt(hash01(900002, j));
-                colorAt(_col, y, 0, hash01(900003, j), hash01(900004, j), hash01(900005, j));
-                gEmit(Math.floor(hash01(900006, j) * glyphs.length), Math.cos(a) * d, y - (needle ? 0.05 : 0), Math.sin(a) * d,
-                    hash01(900007, j) * Math.PI * 2, 0.14 + hash01(900008, j) * 0.03, _col);
+                const needle = j % 3 === 0;
+                const d = needle ? 0.12 + 0.12 * (1 - u) : (0.07 * (1 - u) + 0.01) * Math.sqrt(hash01(900002, j));
+                push(0, needle ? -0.05 : 0, 0, Math.cos(a), 0, Math.sin(a), d, d, 0, 1e6,
+                    hash01(900007, j) * Math.PI * 2, 0.14 + hash01(900008, j) * 0.03, hash01(900006, j), u,
+                    leaderToAt[S] - 1 + u, 0, hash01(900003, j), hash01(900004, j), hash01(900005, j));
             }
-            treeTopTarget = leaderTo;                   // the star's lowest point sits here
-            gCommit();
-        }
 
-        // ---- Fast path for rebuilding the tree while typing (mostly for phones):
-        // letters are written straight into preallocated typed arrays, and one InstancedMesh per letter
-        // is kept and refilled instead of being recreated. No per-letter objects -> no garbage-collection
-        // pauses, no new GPU buffers -> the rotation doesn't hitch when the tree updates.
-        const G_MAX = GLYPH_BUDGET + 4000;
-        const gPos = new Float32Array(G_MAX * 3), gRot = new Float32Array(G_MAX), gSize = new Float32Array(G_MAX);
-        const gCol = new Float32Array(G_MAX * 3), gGlyph = new Uint16Array(G_MAX);
-        let gN = 0, gGlyphs = [];
-        const _col = new THREE.Color();
-        const glyphPool = new Map();                 // letter -> InstancedMesh (reused)
+            // one instanced mesh for the whole tree, one draw call
+            const geo = new THREE.InstancedBufferGeometry();
+            const plane = new THREE.PlaneGeometry(1, 1);
+            geo.index = plane.index;
+            geo.setAttribute('position', plane.getAttribute('position'));
+            geo.setAttribute('uv', plane.getAttribute('uv'));
+            const at = (arr, n) => new THREE.InstancedBufferAttribute(new Float32Array(arr), n);
+            geo.setAttribute('aBase', at(A.base, 3));
+            geo.setAttribute('aDir', at(A.dir, 3));
+            geo.setAttribute('aRA', at(A.rA, 1));
+            geo.setAttribute('aRF', at(A.rF, 1));
+            geo.setAttribute('aAppear', at(A.appear, 1));
+            geo.setAttribute('aVanish', at(A.vanish, 1));
+            geo.setAttribute('aRot', at(A.rot, 1));
+            geo.setAttribute('aSize', at(A.size, 1));
+            geo.setAttribute('aPick', at(A.pick, 1));
+            geo.setAttribute('aLeader', at(A.leader, 1));
+            geo.setAttribute('aColor', at(A.color, 3));
+            geo.instanceCount = A.rot.length;
 
-        function gReset(glyphs) { gN = 0; gGlyphs = glyphs; }
-        function gEmit(gi, x, y, z, rotY, size, col) {
-            if (gN >= G_MAX) return;
-            const k = gN++;
-            gPos[k * 3] = x; gPos[k * 3 + 1] = y; gPos[k * 3 + 2] = z;
-            gRot[k] = rotY; gSize[k] = size; gGlyph[k] = gi;
-            gCol[k * 3] = col.r; gCol[k * 3 + 1] = col.g; gCol[k * 3 + 2] = col.b;
-        }
+            // letter atlas: redrawn (small) whenever the typed letters change
+            const canvas = document.createElement('canvas');
+            canvas.width = ATLAS_CELL * ATLAS_COLS;
+            canvas.height = ATLAS_CELL * ATLAS_ROWS;
+            atlasCtx = canvas.getContext('2d');
+            atlasTex = new THREE.CanvasTexture(canvas);
+            atlasTex.minFilter = THREE.LinearMipMapLinearFilter;
+            atlasTex.anisotropy = 4;
 
-        function poolMesh(char, need) {
-            let mesh = glyphPool.get(char);
-            if (mesh && mesh.userData.capacity >= need) return mesh;
-            if (mesh) { treeGroup.remove(mesh); mesh.dispose && mesh.dispose(); }
-            const capacity = Math.max(256, Math.ceil(need * 1.5));
-            mesh = new THREE.InstancedMesh(planeGeo, glyphMaterial(char), capacity);
-            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-            mesh.setColorAt(0, _col);
-            mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-            mesh.userData.capacity = capacity;
-            treeGroup.add(mesh);
-            glyphPool.set(char, mesh);
-            return mesh;
-        }
-
-        function gCommit() {
-            // several input positions can be the same letter (e.g. HOHOHO) -> merge by letter
-            const byChar = new Map();
-            for (let k = 0; k < gN; k++) {
-                const ch = gGlyphs[gGlyph[k]];
-                byChar.set(ch, (byChar.get(ch) || 0) + 1);
-            }
-            const cursor = new Map();
-            byChar.forEach((n, ch) => { const m = poolMesh(ch, n); m.count = n; m.visible = true; cursor.set(ch, 0); });
-            glyphPool.forEach((m, ch) => { if (!byChar.has(ch)) { m.count = 0; m.visible = false; } });
-
-            for (let k = 0; k < gN; k++) {
-                const ch = gGlyphs[gGlyph[k]];
-                const mesh = glyphPool.get(ch);
-                const idx = cursor.get(ch); cursor.set(ch, idx + 1);
-                // matrix = translate * rotateY * uniform scale (column-major)
-                const c = Math.cos(gRot[k]) * gSize[k], s = Math.sin(gRot[k]) * gSize[k], sz = gSize[k];
-                const e = mesh.instanceMatrix.array, o = idx * 16;
-                e[o] = c;  e[o + 1] = 0;  e[o + 2] = -s; e[o + 3] = 0;
-                e[o + 4] = 0; e[o + 5] = sz; e[o + 6] = 0; e[o + 7] = 0;
-                e[o + 8] = s; e[o + 9] = 0; e[o + 10] = c; e[o + 11] = 0;
-                e[o + 12] = gPos[k * 3]; e[o + 13] = gPos[k * 3 + 1]; e[o + 14] = gPos[k * 3 + 2]; e[o + 15] = 1;
-                const ca = mesh.instanceColor.array, co = idx * 3;
-                ca[co] = gCol[k * 3]; ca[co + 1] = gCol[k * 3 + 1]; ca[co + 2] = gCol[k * 3 + 2];
-            }
-            treeMeshes = [];
-            byChar.forEach((n, ch) => {
-                const m = glyphPool.get(ch);
-                m.instanceMatrix.updateRange.offset = 0; m.instanceMatrix.updateRange.count = n * 16; // upload only what's used
-                m.instanceColor.updateRange.offset = 0; m.instanceColor.updateRange.count = n * 3;
-                m.instanceMatrix.needsUpdate = true;
-                m.instanceColor.needsUpdate = true;
-                treeMeshes.push(m);
+            treeMat = new THREE.ShaderMaterial({
+                fog: true,
+                side: THREE.DoubleSide,
+                uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+                    uAtlas: { value: null }, uStage: { value: 0 }, uMaxStage: { value: S },
+                    uCount: { value: 1 }, uLeaderFrom: { value: 0 }, uLeaderTo: { value: 1 },
+                    uSlots: { value: new Array(32).fill(0) },
+                }]),
+                vertexShader: `
+                    attribute vec3 aBase; attribute vec3 aDir; attribute vec3 aColor;
+                    attribute float aRA; attribute float aRF; attribute float aAppear; attribute float aVanish;
+                    attribute float aRot; attribute float aSize; attribute float aPick; attribute float aLeader;
+                    uniform float uStage; uniform float uMaxStage; uniform float uCount;
+                    uniform float uLeaderFrom; uniform float uLeaderTo; uniform float uSlots[32];
+                    varying vec2 vUv; varying vec3 vColor;
+                    #include <fog_pars_vertex>
+                    void main() {
+                        float vis = smoothstep(aAppear - 0.01, aAppear + 1.0, uStage) * (1.0 - smoothstep(aVanish, aVanish + 1.0, uStage));
+                        vec3 center;
+                        if (aLeader >= 0.0) {
+                            center = vec3(0.0, mix(uLeaderFrom, uLeaderTo, aLeader), 0.0) + aBase + aDir * aRF;
+                        } else {
+                            float t = clamp((uStage - aAppear) / max(1.0, uMaxStage - aAppear), 0.0, 1.0);
+                            center = aBase + aDir * mix(aRA, aRF, t);   // branch thickens as it grows
+                        }
+                        float s = aSize * vis;
+                        float c = cos(aRot), sn = sin(aRot);
+                        vec3 local = vec3(position.x * c, position.y, -position.x * sn) * s;
+                        vec4 mvPosition = modelViewMatrix * vec4(center + local, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+                        float cell = uSlots[int(min(floor(aPick * uCount), uCount - 1.0))];
+                        vec2 cellXY = vec2(mod(cell, ${ATLAS_COLS}.0), floor(cell / ${ATLAS_COLS}.0));
+                        vUv = (cellXY + vec2(uv.x, 1.0 - uv.y)) / vec2(${ATLAS_COLS}.0, ${ATLAS_ROWS}.0);
+                        vUv.y = 1.0 - vUv.y;
+                        vColor = aColor;
+                        #include <fog_vertex>
+                    }`,
+                fragmentShader: `
+                    uniform sampler2D uAtlas;
+                    varying vec2 vUv; varying vec3 vColor;
+                    #include <fog_pars_fragment>
+                    void main() {
+                        float a = texture2D(uAtlas, vUv).a;
+                        if (a < 0.35) discard;
+                        gl_FragColor = vec4(vColor, 1.0);
+                        #include <fog_fragment>
+                    }`,
             });
+            treeMat.uniforms.uAtlas.value = atlasTex;
+            treeMesh = new THREE.Mesh(geo, treeMat);
+            treeMesh.frustumCulled = false;
+            treeGroup.add(treeMesh);
+        }
+
+        // Each distinct letter gets a slot in the atlas the first time it's typed and keeps it,
+        // so the texture is only re-uploaded when a never-seen letter appears (not on every keystroke).
+        const slotOf = new Map();
+        let slotClock = 0;
+        const slotUsed = [];
+        function slotFor(ch, keep) {
+            if (slotOf.has(ch)) { slotUsed[slotOf.get(ch)] = ++slotClock; return [slotOf.get(ch), false]; }
+            let slot = slotOf.size;
+            if (slot >= ATLAS_COLS * ATLAS_ROWS) {          // full: reuse the least recently used slot
+                let best = -1, bestT = Infinity;
+                slotOf.forEach((sl, c) => { if (!keep.has(c) && slotUsed[sl] < bestT) { bestT = slotUsed[sl]; best = sl; } });
+                slotOf.forEach((sl, c) => { if (sl === best) slotOf.delete(c); });
+                slot = best;
+            }
+            slotOf.set(ch, slot);
+            slotUsed[slot] = ++slotClock;
+            const g = atlasCtx, C = ATLAS_CELL;
+            const x0 = (slot % ATLAS_COLS) * C, y0 = Math.floor(slot / ATLAS_COLS) * C;
+            g.clearRect(x0, y0, C, C);
+            g.fillStyle = '#fff';
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.font = `bold ${C * 0.82}px "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+            if (ch === '.') { g.beginPath(); g.arc(x0 + C / 2, y0 + C / 2, C * 0.11, 0, Math.PI * 2); g.fill(); }
+            else g.fillText(ch, x0 + C / 2, y0 + C / 2 + C * 0.04);
+            return [slot, true];
+        }
+
+        function drawAtlas(glyphs) {
+            const keep = new Set(glyphs);
+            const slots = treeMat.uniforms.uSlots.value;
+            let changed = false;
+            glyphs.slice(0, 32).forEach((ch, i) => {
+                const [slot, drawn] = slotFor(ch, keep);
+                slots[i] = slot;
+                changed = changed || drawn;
+            });
+            if (changed) atlasTex.needsUpdate = true;
+        }
+
+        let lastGlyphKey = '';
+        function setTreeText(text) {
+            if (!treeMesh) buildGrowth();
+            const chars = textToChars(text);
+            const glyphs = chars.length ? chars : ['.'];
+            const key = glyphs.join('\u0001');
+            if (key !== lastGlyphKey) { lastGlyphKey = key; drawAtlas(glyphs); }
+            treeMat.uniforms.uCount.value = glyphs.length;
+            // growth stage: nothing typed = a young sapling, 30 letters = fully grown (animated in animate())
+            const c = Math.pow(Math.min(chars.length, MAX_INPUT) / MAX_INPUT, 0.75);
+            stageTarget = (0.38 + 0.62 * c) * maxBirth;
+            if (!stageNow) stageNow = stageTarget;
+            applyStage();
+        }
+
+        function applyStage() {
+            const S = maxBirth, s = Math.max(0, Math.min(S, stageNow));
+            const i0 = Math.floor(s), i1 = Math.min(S, i0 + 1), f = s - i0;
+            const from = leaderFromAt[i0] + (leaderFromAt[i1] - leaderFromAt[i0]) * f;
+            const to = leaderToAt[i0] + (leaderToAt[i1] - leaderToAt[i0]) * f;
+            treeMat.uniforms.uStage.value = s;
+            treeMat.uniforms.uLeaderFrom.value = from - 0;
+            treeMat.uniforms.uLeaderTo.value = to;
+            treeTopTarget = to;                        // the star's lowest point sits here
         }
 
         // Fit the fully grown tree (incl. star, above the text field) to the screen once;
@@ -564,8 +668,8 @@
             input.addEventListener('input', () => {
                 if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
                 autoGrow();
-                // rebuild once typing pauses briefly, so fast typing (and 한글 IME steps) stays smooth
-                clearTimeout(timer); timer = setTimeout(apply, 220);
+                // updates are cheap now (a few GPU numbers), so react almost immediately
+                clearTimeout(timer); timer = setTimeout(apply, 50);
             });
             input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
             requestAnimationFrame(autoGrow);
@@ -581,6 +685,10 @@
             const dt = Math.min(0.1, (now - (animate.last || now)) / 1000);
             animate.last = now;
             treeGroup.rotation.y += 0.48 * dt;
+            if (treeMat && Math.abs(stageTarget - stageNow) > 0.001) {   // smooth grow / shrink
+                stageNow += (stageTarget - stageNow) * Math.min(1, dt * 5);
+                applyStage();
+            }
 
             if (starGroup) {
                 starGroup.rotation.y -= 0.96 * dt;
