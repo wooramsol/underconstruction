@@ -56,12 +56,17 @@
             display: flex; 
             gap: 10px; 
             justify-content: center; 
-            flex-shrink: 0; 
+            flex: 0 1 auto; 
+            min-width: 0; 
         }
+        .project-images a { flex: 0 1 auto; min-width: 0; display: block; }
 
         .project-images img, .project-images video { 
-            height: 300px; 
+            display: block; 
+            height: auto; 
+            max-height: 300px; 
             width: auto; 
+            max-width: 100%; 
             object-fit: contain; 
             cursor: pointer; 
             background-color: #f0f0f0; 
@@ -69,8 +74,8 @@
         }
         
         .project-description { 
-            flex: 1; 
-            min-width: 350px; 
+            flex: 1 1 0; 
+            min-width: 220px; /* text re-wraps to the space beside the images; below this the images shrink instead */
             line-height: 1.6; 
             white-space: pre-line; 
             margin: 10px; 
@@ -95,7 +100,8 @@
                 gap: 10px; 
             }
             .project-images { width: 100%; gap: 0; }
-            .project-images img, .project-images video { width: 100%; height: auto; max-width: 100%; }
+            .project-images a { flex: 1 1 100%; }
+            .project-images img, .project-images video { width: 100%; height: auto; max-width: 100%; max-height: none; }
             .project-images a:not(.main) { display: none; } 
             .project-description { min-width: 100%; margin: 15px 0; }
         }
