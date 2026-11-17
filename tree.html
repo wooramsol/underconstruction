@@ -69,7 +69,7 @@
     </style>
 </head>
 <body>
-    <div id="tree-text-wrap"><textarea id="tree-text" rows="1" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></textarea></div>
+    <div id="tree-text-wrap"><textarea id="tree-text" rows="2" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></textarea></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -662,7 +662,7 @@
 
         function setupInput() {
             const input = document.getElementById('tree-text');
-            input.maxLength = MAX_INPUT * 2;
+            input.maxLength = 40;   // 30 letters + some spaces; always fits in the two lines
             input.value = initialText();
             let timer = 0;
             let urlTimer = 0;
@@ -689,7 +689,8 @@
                 clearTimeout(urlTimer); urlTimer = setTimeout(saveUrl, 1200);
             };
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
-            // the field grows to show everything you typed (no cut-off), then the tree area is re-fitted
+            // The field is a fixed two-line box: everything fits (max 40 characters), and its height never
+            // changes while typing. (Resizing a text box on every key made iPhones stutter.)
             let lastFieldH = 0;
             let lastLen = -1;
             const autoGrow = () => {
@@ -704,7 +705,6 @@
             input.addEventListener('input', () => {
                 perfLog('key', 0);
                 if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
-                autoGrow();
                 // updates are cheap now (a few GPU numbers), so react almost immediately
                 clearTimeout(timer); timer = setTimeout(apply, 50);
             });
@@ -719,7 +719,6 @@
             };
             input.addEventListener('focus', () => setTyping(true));
             input.addEventListener('blur', () => setTyping(false));
-            requestAnimationFrame(autoGrow);
             // keep the 3D controls from reacting while typing
             ['pointerdown', 'touchstart', 'keydown'].forEach((e) => input.addEventListener(e, (ev) => ev.stopPropagation()));
         }
