@@ -931,6 +931,7 @@
 
             return {
                 get playing() { return playing; },
+                running() { return !!ctx && ctx.state === 'running' && playing; },
                 start() {
                     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
                     const begin = () => {
@@ -956,14 +957,21 @@
             };
         })();
 
-        // Autoplay: try immediately; if the browser blocks it, start on first interaction.
+        // Sound: browsers (especially phones) only allow audio after the visitor touches the page.
+        // Try right away (works on desktop when allowed); otherwise start on the FIRST touch anywhere —
+        // dragging the tree, tapping the field, anything. iPhones only accept "touch end / click / key"
+        // as permission, not the start of a touch, so listen for those and keep listening until the
+        // sound is really running.
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} // iOS: play even with the silent switch on
+        const UNLOCK_EVENTS = ['touchend', 'pointerup', 'click', 'keydown'];
         function tryStart() {
             music.start();
+            setTimeout(() => {
+                if (music.running()) UNLOCK_EVENTS.forEach((evt) => window.removeEventListener(evt, tryStart, true));
+            }, 300);
         }
         tryStart();
-        ['pointerdown', 'keydown', 'touchstart'].forEach((evt) =>
-            window.addEventListener(evt, tryStart, { once: true, capture: true }),
-        );
+        UNLOCK_EVENTS.forEach((evt) => window.addEventListener(evt, tryStart, true));
     </script>
 </body>
 </html>
