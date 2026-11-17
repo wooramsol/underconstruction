@@ -73,7 +73,19 @@
         let starMeshes = [];
         const glyphTextures = {};
 
-        const MAX_INPUT = 20;
+        // Length limit by width: wide letters (한글, CJK, emoji) count 2, everything else 1.
+        // 40 units = 20 한글 = 40 English letters, about what fits nicely in the field.
+        const MAX_UNITS = 40;
+        const charUnits = (ch) => (/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]|[\u{1f000}-\u{1faff}]/u.test(ch) ? 2 : 1);
+        function limitUnits(text) {
+            let u = 0, out = '';
+            for (const ch of Array.from(text || '')) {
+                u += charUnits(ch);
+                if (u > MAX_UNITS) break;
+                out += ch;
+            }
+            return out;
+        }
         const IS_PHONE = Math.min(window.innerWidth, window.innerHeight) < 600;
         const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, IS_PHONE ? 1.5 : 2); // phones: fewer pixels to fill
         const EXAMPLE_TEXT = 'RAMSOL'; // only a pre-filled example on first load; an empty field = empty tree
@@ -305,7 +317,7 @@
         }
 
         function textToChars(text) {
-            return Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
+            return Array.from(limitUnits(text || '').replace(/\s+/g, ''));
         }
 
         // ================= GPU-driven growth =================
@@ -558,12 +570,14 @@
         function setTreeText(text) {
             if (!treeMesh) buildGrowth();
             const chars = textToChars(text);
-            const glyphs = chars.length ? chars : ['.'];
+            const unique = [...new Set(chars)].slice(0, ATLAS_COLS * ATLAS_ROWS);   // letters to draw with
+            const glyphs = unique.length ? unique : ['.'];
             const key = glyphs.join('\u0001');
             if (key !== lastGlyphKey) { lastGlyphKey = key; drawAtlas(glyphs); }
             treeMat.uniforms.uCount.value = glyphs.length;
-            // growth stage: nothing typed = a young sapling, 20 letters = fully grown (animated in animate())
-            const c = Math.pow(Math.min(chars.length, MAX_INPUT) / MAX_INPUT, 0.75);
+            // growth stage: nothing typed = a young sapling, 20 한글 / 40 English letters = fully grown
+            const units = chars.reduce((a, ch) => a + charUnits(ch), 0);
+            const c = Math.pow(Math.min(units, MAX_UNITS) / MAX_UNITS, 0.75);
             stageTarget = (0.38 + 0.62 * c) * maxBirth;
             if (!stageNow) stageNow = stageTarget;
             applyStage();
@@ -676,8 +690,8 @@
 
         function setupInput() {
             const input = document.getElementById('tree-text');
-            input.maxLength = MAX_INPUT;   // keeps the text readable in one line
-            input.value = initialText();
+            input.maxLength = MAX_UNITS;   // hard cap; the real limit (by width) is applied below
+            input.value = limitUnits(initialText());
             let timer = 0, urlTimer = 0;
             const saveUrl = () => {
                 try {
@@ -695,7 +709,14 @@
                 clearTimeout(urlTimer); urlTimer = setTimeout(saveUrl, 1200);
             };
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
-            input.addEventListener('input', () => {
+            // trim to the width limit, but never in the middle of composing a 한글 syllable
+            const enforce = () => {
+                const t = limitUnits(input.value);
+                if (t !== input.value) input.value = t;
+            };
+            input.addEventListener('compositionend', () => { enforce(); input.dispatchEvent(new Event('input')); });
+            input.addEventListener('input', (e) => {
+                if (!e.isComposing) enforce();
                 fitFieldText(input);
                 clearTimeout(timer); timer = setTimeout(apply, 50);
             });
