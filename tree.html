@@ -323,11 +323,12 @@
             const scale = Math.min(1, GLYPH_BUDGET / total);
 
             const items = [];
-            let top = GROUND;
+            let top = GROUND, allTop = GROUND;   // highest shoot near the axis / anywhere
             for (let i = 1; i < N; i++) {
                 if (!shown[i]) continue;
                 const n = nodes[i], p = nodes[n.parent];
                 if (n.y > top && Math.abs(n.x) < 0.6 && Math.abs(n.z) < 0.6) top = n.y;
+                if (n.y > allTop) allTop = n.y;
                 const r = radius(i);
                 const isTip = count[i] <= 3;
                 const k = Math.max(1, Math.round(want[i] * scale));
@@ -358,7 +359,28 @@
                     });
                 }
             }
-            treeTopTarget = top;
+            // Leader: a slim central shoot that always runs from the crown up into the star.
+            const STAR_GAP = 0.35;                      // star sits this far above the tallest shoot
+            const leaderFrom = Math.min(top, allTop - 1.2), leaderTo = allTop + STAR_GAP; // starts inside the crown
+            const leaderN = Math.round((leaderTo - leaderFrom) / 0.06);
+            for (let j = 0; j < leaderN; j++) {
+                const u = j / (leaderN - 1);
+                const y = leaderFrom + (leaderTo - leaderFrom) * u;
+                const r = 0.07 * (1 - u) + 0.01;      // tapers toward the star
+                const a = hash01(900001, j) * Math.PI * 2;
+                const needle = j % 3 === 0;           // a few short needles along the way
+                const d = needle ? 0.12 + 0.12 * (1 - u) : r * Math.sqrt(hash01(900002, j));
+                const color = new THREE.Color();
+                colorAt(color, y, 0, hash01(900003, j), hash01(900004, j), hash01(900005, j));
+                items.push({
+                    char: glyphs[Math.floor(hash01(900006, j) * glyphs.length)],
+                    x: Math.cos(a) * d, y: y - (needle ? 0.05 : 0), z: Math.sin(a) * d,
+                    rotY: hash01(900007, j) * Math.PI * 2,
+                    size: 0.14 + hash01(900008, j) * 0.03,
+                    color,
+                });
+            }
+            treeTopTarget = leaderTo;                   // the star's lowest point sits here
             disposeMeshes(treeMeshes);
             treeMeshes = buildInstanced(treeGroup, items);
         }
@@ -373,7 +395,7 @@
         }
 
         function fitCamera() {
-            const top = 0.8 + FIT_TOP + 1.4;          // star above the tallest point (treeGroup is raised by 0.8)
+            const top = 0.8 + FIT_TOP + 0.35 + 1.2;   // leader + star above the tallest point (treeGroup is raised by 0.8)
             const bottom = 0.8 + GROUND - 0.3;
             const halfW = FIT_R * 1.08;               // a little extra for perspective
             const reserve = 1.6;                      // room for the text field at the bottom
@@ -414,7 +436,7 @@
             }
             starMeshes = buildInstanced(starGroup, items);
             treeGroup.add(starGroup);
-            starGroup.position.y = treeTopTarget + 0.55 - 4.8;
+            starGroup.position.y = treeTopTarget + 0.5 - 4.8;
         }
 
         function isPointInPolygon(x, y, vs) {
@@ -462,7 +484,7 @@
 
             if (starGroup) {
                 starGroup.rotation.y -= 0.016;
-                const sy = treeTopTarget + 0.55 - 4.8;   // star sits on the current top of the tree
+                const sy = treeTopTarget + 0.5 - 4.8;    // star's lower points rest on the leader
                 starGroup.position.y += (sy - starGroup.position.y) * 0.1;
                 const time = Date.now() * 0.004;
                 const c = new THREE.Color();
