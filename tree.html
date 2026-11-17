@@ -64,7 +64,6 @@
 
     <script>
         let scene, camera, renderer, treeGroup, starGroup, controls;
-        let treeItems = [];          // fixed positions/colors; only the letters change
         let treeMeshes = [];
         let starMeshes = [];
         const glyphTextures = {};
@@ -105,7 +104,8 @@
             treeGroup.position.y = 0.8;
             scene.add(treeGroup);
 
-            createTreeLayout();
+            growTree();
+            measureGrownTree();
             setTreeText(initialText());
             createOptimizedStar();
             setupInput();
@@ -174,136 +174,209 @@
         }
 
         // Positions and colors are generated once; typing only swaps which letter each spot shows.
-        const TREE_H = 8.5, TREE_R = 4.0;
-        const MIN_GIRTH = 0.6, MAX_GIRTH = 1.6;
+        // ================= Growing the tree: Space Colonization =================
+        // (Runions, Lane & Prusinkiewicz, "Modeling Trees with a Space Colonization Algorithm", 2007)
+        // A cloud of "attraction points" fills a conifer-shaped volume. Starting from a trunk at the
+        // ground, branch tips grow one small step at a time toward the nearby points they can "see";
+        // points that are reached are removed. The full growth is simulated once per visit (so every
+        // visitor gets a different tree) and each node remembers the step it appeared in.
+        // Typing more letters shows later growth steps: more branches, longer tips, a fuller crown.
+        // Branch thickness follows the pipe model (da Vinci / Murray's rule): a branch is as thick as all
+        // the twigs it carries, so the trunk and big limbs visibly thicken as the tree grows.
+        const TREE_H = 8.5, TREE_R = 4.2;         // envelope of the fully grown tree
+        const GROUND = -TREE_H / 2;
+        const STEP = 0.22, INFLUENCE = 2.2, KILL = 0.4, MAX_ITER = 160;
+        let nodes = [];                            // {x,y,z,parent,birth}
+        let maxBirth = 1;
+        let treeTopTarget = 0;
 
-        // Each spot keeps its own random seeds for the whole session. The actual position is
-        // recomputed from those seeds + a "complexity" value, so typing reshapes the tree smoothly
-        // instead of reshuffling it.
-        function createTreeLayout() {
+        function hash01(a, b) {                    // deterministic 0..1 noise, so glyphs keep their spots
+            let t = Math.imul(a | 0, 374761393) ^ Math.imul((b | 0) + 1, 668265263);
+            t = Math.imul(t ^ (t >>> 13), 1274126177);
+            t ^= t >>> 16;
+            return (t >>> 0) / 4294967296;
+        }
+
+        function envelopeRadius(y) {               // conifer outline, slightly bell-shaped
+            const h = (y - GROUND) / TREE_H;
+            return h < 0 || h > 1 ? 0 : TREE_R * Math.pow(1 - h, 1.05); // pointed top, broad base
+        }
+
+        function growTree() {
+            // 1. attraction points inside the crown (bottom 13% stays bare trunk)
             const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
-            const particleCount = isMobile ? 14000 : 22000; // upper bound; how many show depends on text length
-            treeItems = [];
-            for (let i = 0; i < particleCount; i++) {
-                const h = Math.pow(Math.random(), 2.0);
-                if (h < 0.15 && Math.random() > h * 4.0) continue;
+            const A = isMobile ? 1100 : 1500;
+            const pts = [];
+            while (pts.length < A) {
+                const y = GROUND + TREE_H * (0.13 + 0.87 * Math.random());
+                const R = envelopeRadius(y);
+                const x = (Math.random() * 2 - 1) * TREE_R, z = (Math.random() * 2 - 1) * TREE_R;
+                if (x * x + z * z <= R * R) pts.push({ x, y, z, alive: true });
+            }
 
-                treeItems.push({
-                    char: '.', h, color: new THREE.Color(),
-                    cH: Math.random() - 0.5, cS: Math.random() - 0.5, cL: Math.random() - 0.5,
-                    size: (0.11 + Math.random() * 0.02) * 1.25,
-                    uTheta: Math.random(), uR: Math.random(), uSpike: Math.random(), uSpikeAmt: Math.random(),
-                    uBranch: Math.random(), uBranchIdx: Math.random(), uJit: Math.random(), uDroop: Math.random(),
-                    pick: Math.random(), rank: Math.random(),
+            // 2. trunk: grow straight up until the crown is within reach
+            nodes = [{ x: 0, y: GROUND, z: 0, parent: -1, birth: 0 }];
+            const near = (n) => pts.some((p) => (p.x - n.x) ** 2 + (p.y - n.y) ** 2 + (p.z - n.z) ** 2 < INFLUENCE * INFLUENCE);
+            while (!near(nodes[nodes.length - 1])) {
+                const last = nodes[nodes.length - 1];
+                nodes.push({ x: 0, y: last.y + STEP, z: 0, parent: nodes.length - 1, birth: 0 });
+            }
+
+            // spatial grid so each point only checks nearby nodes
+            const CELL = INFLUENCE;
+            const grid = new Map();
+            const key = (x, y, z) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)},${Math.floor(z / CELL)}`;
+            const addToGrid = (i) => {
+                const n = nodes[i], k = key(n.x, n.y, n.z);
+                if (!grid.has(k)) grid.set(k, []);
+                grid.get(k).push(i);
+            };
+            nodes.forEach((_, i) => addToGrid(i));
+
+            // 3. grow
+            for (let it = 1; it <= MAX_ITER; it++) {
+                const pull = new Map();                 // node index -> summed direction
+                let alive = 0;
+                for (const p of pts) {
+                    if (!p.alive) continue;
+                    alive++;
+                    const cx = Math.floor(p.x / CELL), cy = Math.floor(p.y / CELL), cz = Math.floor(p.z / CELL);
+                    let best = -1, bestD = INFLUENCE * INFLUENCE;
+                    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+                        const list = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
+                        if (!list) continue;
+                        for (const i of list) {
+                            const n = nodes[i];
+                            const d = (p.x - n.x) ** 2 + (p.y - n.y) ** 2 + (p.z - n.z) ** 2;
+                            if (d < bestD) { bestD = d; best = i; }
+                        }
+                    }
+                    if (best < 0) continue;
+                    if (bestD < KILL * KILL) { p.alive = false; continue; }
+                    const n = nodes[best], d = Math.sqrt(bestD);
+                    const v = pull.get(best) || { x: 0, y: 0, z: 0 };
+                    v.x += (p.x - n.x) / d; v.y += (p.y - n.y) / d; v.z += (p.z - n.z) / d;
+                    pull.set(best, v);
+                }
+                if (!alive || !pull.size) break;
+                let grew = 0;
+                pull.forEach((v, i) => {
+                    v.y += 0.55;                        // upward tropism, like a conifer
+                    const len = Math.hypot(v.x, v.y, v.z) || 1;
+                    const n = nodes[i];
+                    const nx = n.x + (v.x / len) * STEP, ny = n.y + (v.y / len) * STEP, nz = n.z + (v.z / len) * STEP;
+                    // skip if this node already grew almost the same child (avoids stuck tips)
+                    if (nodes.some((m, j) => m.parent === i && (m.x - nx) ** 2 + (m.y - ny) ** 2 + (m.z - nz) ** 2 < 0.0025)) return;
+                    nodes.push({ x: nx, y: ny, z: nz, parent: i, birth: it });
+                    addToGrid(nodes.length - 1);
+                    grew++;
                 });
+                if (!grew) break;
+                maxBirth = it;
             }
-            measureMaxExtent();
         }
 
-        // How wide the tree gets at 30 letters (ignoring the few most extreme tips),
-        // so the camera can fit that once and keep the same size for every input.
-        let FIT_R = TREE_R * MAX_GIRTH;
-        function measureMaxExtent() {
-            const tmp = { color: new THREE.Color() };
-            const radii = treeItems.map((it) => {
-                Object.assign(tmp, it, { color: tmp.color });
-                placeItem(tmp, 1);
-                return Math.hypot(tmp.x, tmp.z);
-            }).sort((a, b) => a - b);
-            FIT_R = radii[Math.floor(radii.length * 0.97)] || FIT_R;
-        }
-
-        // c = 0 (nothing typed) .. 1 (30 letters): more tiers, more branch arms, more spikes.
-        // Random branches: generated once per visit (so every visitor gets a different tree).
-        // More letters switch on more of them, so the tree gets wilder as you type.
-        const MAX_BRANCHES = 140;
-        const branches = [];
-        for (let i = 0; i < MAX_BRANCHES; i++) {
-            const hb = Math.pow(Math.random(), 1.25) * 0.9;              // where on the trunk it starts
-            branches.push({
-                hb,
-                theta: Math.random() * Math.PI * 2,                      // direction
-                len: TREE_R * (1 - hb) * (0.5 + Math.random() * 0.7),    // some poke out a bit past the outline
-                tilt: (Math.random() - 0.35) * 0.9,                      // mostly up, some sideways/down
-                droop: Math.random() * 0.9,                              // how much the tip hangs
-                curve: (Math.random() - 0.5) * 1.6,                      // sideways bend along its length
-                twigs: Math.random(),                                    // how bushy
-            });
-        }
-
-        // colour follows the spot's actual height (dark green at the bottom, light at the top)
-        function colorFor(it, y) {
-            const h = THREE.MathUtils.clamp((y + TREE_H / 2) / TREE_H, 0, 1);
-            const alpha = 0.15 + THREE.MathUtils.smoothstep(h, 0.0, 0.15) * 0.85; // lower part stays visible so the broad base reads
-            const col = it.color.copy(COLOR_BOTTOM).lerp(COLOR_TOP, h).lerp(BG_COLOR, 1.0 - alpha);
-            const hsl = {};
-            col.getHSL(hsl);
-            col.setHSL(hsl.h + it.cH * 0.08, hsl.s + it.cS * 0.5, hsl.l + 0.1 + it.cL * 0.6 * alpha);
-            col.lerp(BG_COLOR, 1.0 - alpha);
-        }
-
-        // c = 0 (nothing typed) .. 1 (30 letters)
-        function placeItem(it, c) {
-            const active = Math.round(8 + c * (MAX_BRANCHES - 8));
-            const bi = Math.floor(it.uBranchIdx * MAX_BRANCHES);
-            const onBranch = it.uBranch < 0.2 + 0.55 * c && bi < active;
-
-            let x, y, z, theta;
-            if (onBranch) {
-                const br = branches[bi];
-                const s = Math.pow(it.uR, 0.8);                          // position along the branch (0 = trunk)
-                const len = br.len * s;
-                theta = br.theta + br.curve * s * s;
-                const by = (br.hb * TREE_H - TREE_H / 2) + len * br.tilt - br.droop * s * s;
-                // twigs: scatter around the branch line, more towards the tip
-                const spread = (0.08 + 0.35 * br.twigs) * s;
-                const a = it.uJit * Math.PI * 2;
-                const off = spread * Math.sqrt(it.uDroop);
-                const r = 0.15 + len;
-                x = Math.cos(theta) * r + Math.cos(a) * off * Math.sin(theta);
-                z = Math.sin(theta) * r - Math.cos(a) * off * Math.cos(theta);
-                y = by + Math.sin(a) * off;
-            } else {
-                // soft cone body
-                const h = it.h;
-                theta = it.uTheta * Math.PI * 2;
-                let r = TREE_R * Math.pow(1 - h, 0.85) * Math.sqrt(it.uR) * 0.9; // gently bell-shaped outline
-                if (it.uSpike > 0.7) r *= (0.9 + it.uSpikeAmt * 0.2) + it.uSpikeAmt * 0.5 * (1.0 - h);
-                x = Math.cos(theta) * r;
-                z = Math.sin(theta) * r;
-                y = h * TREE_H - TREE_H / 2;
-            }
-            // overall girth (outer silhouette): slim when little is typed, very broad at 30 letters.
-            // Height stays the same; the camera is fitted to the widest case so it always fits on screen.
-            const girth = MIN_GIRTH + (MAX_GIRTH - MIN_GIRTH) * c;
-            it.x = x * girth; it.y = y; it.z = z * girth;
-            colorFor(it, y);
-            it.rotY = -theta;
+        // colour by height (dark green at the bottom, light at the top); thick wood a bit darker
+        const _hsl = {};
+        function colorAt(out, y, wood, n1, n2, n3) {
+            const h = THREE.MathUtils.clamp((y - GROUND) / TREE_H, 0, 1);
+            const alpha = 0.2 + THREE.MathUtils.smoothstep(h, 0.0, 0.15) * 0.8;
+            out.copy(COLOR_BOTTOM).lerp(COLOR_TOP, h).lerp(BG_COLOR, 1.0 - alpha);
+            out.getHSL(_hsl);
+            out.setHSL(_hsl.h + (n1 - 0.5) * 0.08, _hsl.s + (n2 - 0.5) * 0.5, _hsl.l + 0.1 + (n3 - 0.5) * 0.6 * alpha);
+            out.lerp(BG_COLOR, 1.0 - alpha);
+            if (wood > 0) out.lerp(BG_COLOR, Math.min(0.45, wood));
         }
 
         function textToChars(text) {
             return Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
         }
 
+        const GLYPH_BUDGET = Math.min(window.innerWidth, window.innerHeight) < 600 ? 12000 : 18000;
+
         function setTreeText(text) {
             const chars = textToChars(text);
-            // More letters -> denser, more branches, more complex. The size on screen stays the same.
-            // Nothing typed -> a sparse, simple tree made of '.' only.
-            const c = Math.sqrt(Math.min(chars.length, MAX_INPUT) / MAX_INPUT); // 0..1
-            const density = 0.35 + 0.65 * c;  // share of the pre-generated spots that are shown
             const glyphs = chars.length ? chars : ['.'];
-            const shown = treeItems.filter((it) => it.rank < density);
-            shown.forEach((it) => { placeItem(it, c); it.char = glyphs[Math.floor(it.pick * glyphs.length)]; });
+            // growth stage: nothing typed = a young sapling, 30 letters = fully grown
+            const c = Math.pow(Math.min(chars.length, MAX_INPUT) / MAX_INPUT, 0.75);
+            const stage = Math.round((0.38 + 0.62 * c) * maxBirth);
+
+            // nodes that exist at this stage form a connected tree (children always appear after parents)
+            const N = nodes.length;
+            const shown = new Uint8Array(N);
+            const count = new Float32Array(N);            // twigs carried by each branch (pipe model)
+            for (let i = 0; i < N; i++) if (nodes[i].birth <= stage) { shown[i] = 1; count[i] = 1; }
+            for (let i = N - 1; i > 0; i--) if (shown[i]) count[nodes[i].parent] += count[i];
+
+            // radius of each branch: thin twigs, thick trunk; grows as more twigs are carried
+            const radius = (i) => Math.min(0.5, 0.02 * Math.pow(count[i], 0.42));
+
+            // how many letters each segment gets (thicker = more letters), scaled to the budget
+            const want = new Float32Array(N);
+            let total = 0;
+            for (let i = 1; i < N; i++) {
+                if (!shown[i]) continue;
+                const r = radius(i);
+                want[i] = 2.5 + r * 45 + (count[i] <= 3 ? 7 : 0); // + needles around young tips
+                total += want[i];
+            }
+            const scale = Math.min(1, GLYPH_BUDGET / total);
+
+            const items = [];
+            let top = GROUND;
+            for (let i = 1; i < N; i++) {
+                if (!shown[i]) continue;
+                const n = nodes[i], p = nodes[n.parent];
+                if (n.y > top && Math.abs(n.x) < 0.6 && Math.abs(n.z) < 0.6) top = n.y;
+                const r = radius(i);
+                const isTip = count[i] <= 3;
+                const k = Math.max(1, Math.round(want[i] * scale));
+                // segment direction, used to scatter letters around (not along) the branch
+                const sx = n.x - p.x, sy = n.y - p.y, sz = n.z - p.z;
+                const sl = Math.hypot(sx, sy, sz) || 1;
+                for (let j = 0; j < k; j++) {
+                    const u = hash01(i, j * 7 + 1);
+                    // random direction, minus its component along the branch
+                    let ox = hash01(i, j * 7 + 2) * 2 - 1, oy = hash01(i, j * 7 + 3) * 2 - 1, oz = hash01(i, j * 7 + 4) * 2 - 1;
+                    const dot = (ox * sx + oy * sy + oz * sz) / sl;
+                    ox -= dot * sx / sl; oy -= dot * sy / sl; oz -= dot * sz / sl;
+                    const ol = Math.hypot(ox, oy, oz) || 1;
+                    const needle = isTip && j >= k * 0.4;
+                    const spread = needle ? 0.3 : r;
+                    const d = spread * Math.sqrt(hash01(i, j * 7 + 5));
+                    const x = p.x + sx * u + (ox / ol) * d;
+                    const y = p.y + sy * u + (oy / ol) * d - (needle ? 0.06 : 0);
+                    const z = p.z + sz * u + (oz / ol) * d;
+                    const color = new THREE.Color();
+                    colorAt(color, y, needle ? 0 : r * 1.6, hash01(i, j * 7 + 6), hash01(i + 7, j), hash01(i + 13, j));
+                    items.push({
+                        char: glyphs[Math.floor(hash01(i + 3, j * 5) * glyphs.length)],
+                        x, y, z,
+                        rotY: hash01(i + 5, j) * Math.PI * 2,
+                        size: 0.15 + hash01(i + 9, j) * 0.04,
+                        color,
+                    });
+                }
+            }
+            treeTopTarget = top;
             disposeMeshes(treeMeshes);
-            treeMeshes = buildInstanced(treeGroup, shown);
+            treeMeshes = buildInstanced(treeGroup, items);
         }
 
-        // Fit the whole tree (incl. star, above the text field) to the screen; same size whatever is typed.
+        // Fit the fully grown tree (incl. star, above the text field) to the screen once;
+        // the camera stays put while the tree grows inside that frame.
+        let FIT_R = TREE_R, FIT_TOP = GROUND + TREE_H;
+        function measureGrownTree() {
+            const rs = nodes.map((n) => Math.hypot(n.x, n.z)).sort((a, b) => a - b);
+            FIT_R = (rs[Math.floor(rs.length * 0.99)] || TREE_R) + 0.4;
+            FIT_TOP = nodes.reduce((m, n) => Math.max(m, n.y), GROUND);
+        }
+
         function fitCamera() {
-            const top = 0.8 + 4.8 + 0.7;            // star top (treeGroup is raised by 0.8)
-            const bottom = 0.8 - TREE_H / 2 - 0.6;  // lowest drooping tips
-            const halfW = FIT_R * 1.08;             // a little extra for perspective (near side looks bigger)
-            const reserve = 1.6;                    // room for the text field at the bottom
+            const top = 0.8 + FIT_TOP + 1.4;          // star above the tallest point (treeGroup is raised by 0.8)
+            const bottom = 0.8 + GROUND - 0.3;
+            const halfW = FIT_R * 1.08;               // a little extra for perspective
+            const reserve = 1.6;                      // room for the text field at the bottom
             const halfH = (top - bottom + reserve) / 2;
             const centerY = (top + bottom - reserve) / 2;
             const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
@@ -341,6 +414,7 @@
             }
             starMeshes = buildInstanced(starGroup, items);
             treeGroup.add(starGroup);
+            starGroup.position.y = treeTopTarget + 0.55 - 4.8;
         }
 
         function isPointInPolygon(x, y, vs) {
@@ -388,6 +462,8 @@
 
             if (starGroup) {
                 starGroup.rotation.y -= 0.016;
+                const sy = treeTopTarget + 0.55 - 4.8;   // star sits on the current top of the tree
+                starGroup.position.y += (sy - starGroup.position.y) * 0.1;
                 const time = Date.now() * 0.004;
                 const c = new THREE.Color();
                 let index = 0;
