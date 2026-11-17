@@ -39,10 +39,18 @@
             top: max(16px, env(safe-area-inset-top));   /* text field on top, tree right below it */
             transform: translateX(-50%);
             z-index: 10;
-            width: min(320px, calc(100vw - 40px));
+            width: min(420px, calc(100vw - 24px));   /* tighter side margins */
         }
         .tree-row { display: flex; gap: 8px; align-items: stretch; }
-        .field-box { flex: 1; min-width: 0; position: relative; }
+        /* the box (border, background, height) stays the same size; only the text inside shrinks */
+        .field-box {
+            flex: 1; min-width: 0; position: relative;
+            height: 44px; padding: 0 8px; box-sizing: border-box;
+            display: flex; align-items: center; overflow: hidden;
+            background: #010301; border: 1px solid #0f400f; border-radius: 6px;
+            contain: layout paint style;
+        }
+        .field-box:focus-within { border-color: #aaffaa; }
         #copy-link {
             flex: none;
             padding: 0 14px;
@@ -83,8 +91,10 @@
         @keyframes hintPulse { 50% { opacity: .45; } }
         #tree-text {
             width: 100%;
+            flex: none;
             box-sizing: border-box;
-            padding: 10px 14px;
+            padding: 0;
+            height: 100%;
             font-size: 16px; /* 16px+ stops iOS from zooming on focus */
             /* proportional UI font: a monospace font made every space as wide as a letter */
             font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
@@ -92,13 +102,13 @@
             display: block;
             transform-origin: 50% 50%;  /* long text is shrunk with a transform to fit (see fitFieldText) */
             color: #aaffaa;
-            background: #010301;        /* opaque: cheaper for the browser to repaint while typing */
-            contain: layout paint style;
-            border: 1px solid #0f400f;
-            border-radius: 6px;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
             outline: none;
+            -webkit-appearance: none;
+            appearance: none;
         }
-        #tree-text:focus { border-color: #aaffaa; }
         #tree-text::placeholder { color: #3f7f3f; font-size: 14px; }
     </style>
 </head>
@@ -741,7 +751,7 @@
         function fitFieldText(input) {
             const cs = getComputedStyle(input);
             measureCtx.font = `${cs.fontSize} ${cs.fontFamily}`;
-            const avail = input.parentElement.clientWidth - 30;                 // minus padding
+            const avail = input.parentElement.clientWidth - 16 - 4;             // minus padding, small safety
             const w = measureCtx.measureText(input.value || input.placeholder).width;
             let sc = Math.min(1, avail / Math.max(1, w));
             sc = Math.max(0.5, Math.floor(sc * 20) / 20);                      // steps of 5%, so it rarely changes
