@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="description" content="An interactive 3D ASCII Christmas tree made of letters, with music. Drag to rotate. By Ramsol Jeong (정우람솔, wooramsol).">
+    <meta name="description" content="An interactive 3D Christmas tree made of letters. Type any word in English or 한글 and the tree rebuilds from your letters in real time. By Ramsol Jeong (정우람솔, wooramsol).">
     <link rel="canonical" href="https://wooramsol.com/tree.html">
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -10,7 +10,7 @@
     <meta property="og:site_name" content="Ramsol's Repository">
     <meta property="og:url" content="https://wooramsol.com/tree.html">
     <meta property="og:title" content="ASCII Christmas Tree — Ramsol Jeong (정우람솔)">
-    <meta property="og:description" content="An interactive 3D ASCII Christmas tree made of letters, with music. Drag to rotate. By Ramsol Jeong (정우람솔, wooramsol).">
+    <meta property="og:description" content="An interactive 3D Christmas tree made of letters. Type any word in English or 한글 and the tree rebuilds from your letters in real time. By Ramsol Jeong (정우람솔, wooramsol).">
     <meta property="og:image" content="https://wooramsol.com/og.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -31,29 +31,52 @@
             height: 100%;
             outline: none;
         }
+        #tree-text-wrap {
+            position: fixed;
+            left: 50%;
+            bottom: max(24px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            z-index: 10;
+            width: min(320px, calc(100vw - 40px));
+        }
+        #tree-text {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 14px;
+            font-size: 16px; /* 16px+ stops iOS from zooming on focus */
+            font-family: inherit;
+            text-align: center;
+            color: #aaffaa;
+            background: rgba(1, 3, 1, 0.75);
+            border: 1px solid #0f400f;
+            border-radius: 6px;
+            outline: none;
+        }
+        #tree-text:focus { border-color: #aaffaa; }
+        #tree-text::placeholder { color: #3f7f3f; }
     </style>
 </head>
 <body>
+    <div id="tree-text-wrap"><input id="tree-text" type="text" placeholder="RAMSOL" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
-        let scene, camera, renderer, treeGroup, starGroup, font, controls;
-        const glyphCache = {};
+        let scene, camera, renderer, treeGroup, starGroup, controls;
+        let treeItems = [];          // fixed positions/colors; only the letters change
+        let treeMeshes = [];
         let starMeshes = [];
+        const glyphTextures = {};
 
-        const chars = ['R', 'A', 'M', 'S', 'O', 'L' , '*'];
-        const starChars = ['*'];
+        const DEFAULT_CHARS = ['R', 'A', 'M', 'S', 'O', 'L', '*'];
+        const MAX_INPUT = 30;
 
-        const BG_COLOR = new THREE.Color(0x010301); 
-        const COLOR_BOTTOM = new THREE.Color(0x0f400f); 
+        const BG_COLOR = new THREE.Color(0x010301);
+        const COLOR_BOTTOM = new THREE.Color(0x0f400f);
         const COLOR_TOP = new THREE.Color(0xaaffaa);
-        
         const STAR_COLOR_YELLOW = new THREE.Color(0xffff00);
         const STAR_COLOR_WHITE = new THREE.Color(0xffffff);
-
-        init();
 
         function init() {
             scene = new THREE.Scene();
@@ -65,73 +88,70 @@
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(BG_COLOR, 1); 
+            renderer.setClearColor(BG_COLOR, 1);
             document.body.appendChild(renderer.domElement);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            
             controls.enablePan = true;
             controls.screenSpacePanning = true;
-
-            controls.mouseButtons = {
-                LEFT: THREE.MOUSE.ROTATE,
-                MIDDLE: THREE.MOUSE.PAN,
-                RIGHT: THREE.MOUSE.DOLLY
-            };
-
-            controls.touches = {
-                ONE: THREE.TOUCH.ROTATE,
-                TWO: THREE.TOUCH.DOLLY_PAN
-            };
-
+            controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY };
+            controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
             controls.minDistance = 5;
             controls.maxDistance = 30;
 
             treeGroup = new THREE.Group();
-            treeGroup.position.y = 0.8; 
+            treeGroup.position.y = 0.8;
             scene.add(treeGroup);
 
-            const loader = new THREE.FontLoader();
-            loader.load('https://unpkg.com/three@0.128.0/examples/fonts/helvetiker_regular.typeface.json', (f) => {
-                font = f;
-                createExtraSpikyTree();
-                createOptimizedStar();
-                animate();
-            });
+            createTreeLayout();
+            setTreeText(initialText());
+            createOptimizedStar();
+            setupInput();
+            animate();
 
             window.addEventListener('resize', onResize);
         }
 
-        // One text geometry per character (built once), drawn with InstancedMesh.
-        // Previously every letter was its own mesh + material (~9,000 draw calls), which froze/crashed phones.
-        function glyph(char, depth, centered) {
-            const key = char + depth + centered;
-            if (!glyphCache[key]) {
-                const g = new THREE.TextGeometry(char, { font: font, size: 1, height: depth, curveSegments: 3 }); // letters are only a few px tall
-                if (centered) g.center();
-                glyphCache[key] = g;
-            }
-            return glyphCache[key];
+        // ---- Letters are drawn onto small canvases with the device's own fonts, so any
+        //      language works (English, 한글, even emoji). Each distinct letter = one draw call.
+        function glyphTexture(char) {
+            if (glyphTextures[char]) return glyphTextures[char];
+            const S = 128;
+            const c = document.createElement('canvas');
+            c.width = c.height = S;
+            const g = c.getContext('2d');
+            g.fillStyle = '#fff';
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.font = `bold ${S * 0.82}px "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+            g.fillText(char, S / 2, S / 2 + S * 0.04);
+            const tex = new THREE.CanvasTexture(c);
+            tex.minFilter = THREE.LinearMipMapLinearFilter;
+            tex.anisotropy = 4;
+            glyphTextures[char] = tex;
+            return tex;
         }
 
-        function buildInstanced(parent, items, depth, centered) {
-            // items: [{char, x, y, z, rotY, size, color}]
-            const byChar = {};
-            items.forEach((it) => (byChar[it.char] = byChar[it.char] || []).push(it));
+        const planeGeo = new THREE.PlaneGeometry(1, 1);
+        const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+        const UP = new THREE.Vector3(0, 1, 0);
+
+        function buildInstanced(parent, items) {
+            // items: [{char, x, y, z, rotY, size, color}] -> one InstancedMesh per distinct char
+            const byChar = new Map();
+            items.forEach((it) => { if (!byChar.has(it.char)) byChar.set(it.char, []); byChar.get(it.char).push(it); });
             const meshes = [];
-            const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
-            const up = new THREE.Vector3(0, 1, 0);
-            Object.keys(byChar).forEach((char) => {
-                const list = byChar[char];
-                const mesh = new THREE.InstancedMesh(glyph(char, depth, centered), new THREE.MeshBasicMaterial({ color: 0xffffff }), list.length);
+            byChar.forEach((list, char) => {
+                const mat = new THREE.MeshBasicMaterial({ map: glyphTexture(char), color: 0xffffff, alphaTest: 0.35, side: THREE.DoubleSide });
+                const mesh = new THREE.InstancedMesh(planeGeo, mat, list.length);
                 list.forEach((it, i) => {
-                    p.set(it.x, it.y, it.z);
-                    q.setFromAxisAngle(up, it.rotY || 0);
-                    sc.set(it.size, it.size, it.size);
-                    m.compose(p, q, sc);
-                    mesh.setMatrixAt(i, m);
+                    _p.set(it.x, it.y, it.z);
+                    _q.setFromAxisAngle(UP, it.rotY || 0);
+                    _s.set(it.size, it.size, it.size);
+                    _m.compose(_p, _q, _s);
+                    mesh.setMatrixAt(i, _m);
                     mesh.setColorAt(i, it.color);
                 });
                 mesh.instanceMatrix.needsUpdate = true;
@@ -143,22 +163,21 @@
             return meshes;
         }
 
-        function createExtraSpikyTree() {
+        function disposeMeshes(list) {
+            list.forEach((m) => { m.parent && m.parent.remove(m); m.material.dispose(); m.dispose && m.dispose(); });
+        }
+
+        // Positions and colors are generated once; typing only swaps which letter each spot shows.
+        function createTreeLayout() {
             const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
             const particleCount = isMobile ? 7000 : 10000;
             const treeHeight = 8.5;
             const maxRadius = 4.0;
-            const items = [];
-            // depth is relative to size 1 (original: height 0.01 at size ~0.12)
-            const depth = 0.01 / 0.12;
+            treeItems = [];
 
             for (let i = 0; i < particleCount; i++) {
-                const ratio = Math.random();
-                let heightDistribution = Math.pow(ratio, 2.0);
-
-                if (heightDistribution < 0.15 && Math.random() > heightDistribution * 4.0) {
-                    continue;
-                }
+                const heightDistribution = Math.pow(Math.random(), 2.0);
+                if (heightDistribution < 0.15 && Math.random() > heightDistribution * 4.0) continue;
 
                 const y = (heightDistribution * treeHeight) - (treeHeight / 2);
                 const baseConeRadius = maxRadius * (1 - heightDistribution);
@@ -168,99 +187,113 @@
                 if (Math.random() > 0.7) {
                     spikeFactor = (0.9 + Math.random() * 0.2) + (Math.random() * 0.5 * (1.0 - heightDistribution));
                 }
-
                 const r = baseConeRadius * Math.sqrt(Math.random()) * spikeFactor;
-                const char = chars[Math.floor(Math.random() * chars.length)];
-                const size = 0.11 + (Math.random() * 0.02);
+                const size = (0.11 + Math.random() * 0.02) * 1.25; // plane is a bit larger than the glyph itself
 
                 let alpha = THREE.MathUtils.smoothstep(heightDistribution, 0.0, 0.25);
                 alpha = 0.1 + alpha * 0.9;
-
-                let baseColor = COLOR_BOTTOM.clone().lerp(COLOR_TOP, heightDistribution);
-                baseColor.lerp(BG_COLOR, 1.0 - alpha);
-
+                const color = COLOR_BOTTOM.clone().lerp(COLOR_TOP, heightDistribution);
+                color.lerp(BG_COLOR, 1.0 - alpha);
                 const hsl = {};
-                baseColor.getHSL(hsl);
+                color.getHSL(hsl);
                 hsl.h += (Math.random() - 0.5) * 0.08;
                 hsl.s += (Math.random() - 0.5) * 0.5;
                 hsl.l += 0.1 + (Math.random() - 0.5) * 0.6 * alpha;
-                baseColor.setHSL(hsl.h, hsl.s, hsl.l);
-                // stand-in for the old per-letter opacity: fade toward the background
-                baseColor.lerp(BG_COLOR, 1.0 - alpha);
+                color.setHSL(hsl.h, hsl.s, hsl.l);
+                color.lerp(BG_COLOR, 1.0 - alpha);
 
-                items.push({ char, x: Math.cos(theta) * r, y, z: Math.sin(theta) * r, rotY: -theta, size, color: baseColor });
+                treeItems.push({ char: 'R', x: Math.cos(theta) * r, y, z: Math.sin(theta) * r, rotY: -theta, size, color, pick: Math.random() });
             }
-            buildInstanced(treeGroup, items, depth, false);
+        }
+
+        function textToChars(text) {
+            const chars = Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
+            return chars.length ? chars : DEFAULT_CHARS;
+        }
+
+        function setTreeText(text) {
+            const chars = textToChars(text);
+            treeItems.forEach((it) => { it.char = chars[Math.floor(it.pick * chars.length)]; });
+            disposeMeshes(treeMeshes);
+            treeMeshes = buildInstanced(treeGroup, treeItems);
         }
 
         function createOptimizedStar() {
             starGroup = new THREE.Group();
-            const centerY = 4.8;
-            const outerRadius = 0.65;
-            const innerRadius = 0.28;
-            const thicknessFactor = 0.15;
-
+            const centerY = 4.8, outerRadius = 0.65, innerRadius = 0.28, thicknessFactor = 0.15;
             const vertices = [];
-            const numPoints = 5;
-            for (let i = 0; i < numPoints * 2; i++) {
-                const angle = (Math.PI / 2) + (i * Math.PI / numPoints);
+            for (let i = 0; i < 10; i++) {
+                const angle = (Math.PI / 2) + (i * Math.PI / 5);
                 const r = (i % 2 === 0) ? outerRadius : innerRadius;
                 vertices.push({ x: Math.cos(angle) * r, y: centerY + Math.sin(angle) * r });
             }
-
             const items = [];
-            const fillCount = 600;
             let attempts = 0;
-            while (items.length < fillCount && attempts < 10000) {
+            while (items.length < 600 && attempts < 10000) {
                 attempts++;
                 const rx = (Math.random() - 0.5) * 2 * outerRadius;
                 const ry = centerY + (Math.random() - 0.5) * 2 * outerRadius;
-
-                if (isPointInPolygon(rx, ry, vertices)) {
-                    const dist = Math.sqrt(rx * rx + (ry - centerY) * (ry - centerY));
-                    const distRatio = dist / outerRadius;
-                    const currentMaxZ = (1.0 - distRatio) * thicknessFactor;
-                    const rz = (Math.random() - 0.5) * 2 * currentMaxZ;
-                    const size = 0.08 + (1.0 - distRatio) * 0.06 + Math.random() * 0.04;
-                    const char = starChars[Math.floor(Math.random() * starChars.length)];
-                    const color = (Math.random() > 0.05) ? STAR_COLOR_YELLOW.clone() : STAR_COLOR_WHITE.clone();
-                    const hsl = {};
-                    color.getHSL(hsl);
-                    items.push({ char, x: rx, y: ry, z: rz, size, color, hsl });
-                }
+                if (!isPointInPolygon(rx, ry, vertices)) continue;
+                const distRatio = Math.sqrt(rx * rx + (ry - centerY) * (ry - centerY)) / outerRadius;
+                const rz = (Math.random() - 0.5) * 2 * (1.0 - distRatio) * thicknessFactor;
+                const size = (0.08 + (1.0 - distRatio) * 0.06 + Math.random() * 0.04) * 1.3;
+                const color = (Math.random() > 0.05) ? STAR_COLOR_YELLOW.clone() : STAR_COLOR_WHITE.clone();
+                const hsl = {};
+                color.getHSL(hsl);
+                // random facing so the flat glyphs never all turn edge-on together while the star spins
+                items.push({ char: '*', x: rx, y: ry, z: rz, rotY: Math.random() * Math.PI, size, color, hsl });
             }
-            starMeshes = buildInstanced(starGroup, items, 0.02 / 0.11, true);
+            starMeshes = buildInstanced(starGroup, items);
             treeGroup.add(starGroup);
         }
 
         function isPointInPolygon(x, y, vs) {
             let inside = false;
             for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-                const xi = vs[i].x, yi = vs[i].y;
-                const xj = vs[j].x, yj = vs[j].y;
-                const intersect = ((yi > y) !== (yj > y)) &&
-                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-                if (intersect) inside = !inside;
+                const xi = vs[i].x, yi = vs[i].y, xj = vs[j].x, yj = vs[j].y;
+                if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
             }
             return inside;
+        }
+
+        // ---- Text field: live rebuild while typing; the text is kept in the URL (?text=) so a tree can be shared.
+        function initialText() {
+            try { return new URLSearchParams(location.search).get('text') || ''; } catch (e) { return ''; }
+        }
+
+        function setupInput() {
+            const input = document.getElementById('tree-text');
+            input.maxLength = MAX_INPUT * 2;
+            input.value = initialText();
+            let timer = 0;
+            const apply = () => {
+                setTreeText(input.value);
+                try {
+                    const url = new URL(location.href);
+                    if (input.value.trim()) url.searchParams.set('text', input.value.trim());
+                    else url.searchParams.delete('text');
+                    history.replaceState(null, '', url);
+                } catch (e) {}
+            };
+            // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
+            input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(apply, 120); });
+            // keep the 3D controls from reacting while typing
+            ['pointerdown', 'touchstart', 'keydown'].forEach((e) => input.addEventListener(e, (ev) => ev.stopPropagation()));
         }
 
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-            treeGroup.rotation.y += 0.008; 
-            
+            treeGroup.rotation.y += 0.008;
+
             if (starGroup) {
                 starGroup.rotation.y -= 0.016;
-
                 const time = Date.now() * 0.004;
                 const c = new THREE.Color();
                 let index = 0;
                 starMeshes.forEach((mesh) => {
                     mesh.userData.items.forEach((it, i) => {
-                        const offset = index++ * 0.5;
-                        const wave = Math.sin(time * 0.7 + offset);
-                        const flash = Math.pow(Math.abs(wave), 5);
+                        const flash = Math.pow(Math.abs(Math.sin(time * 0.7 + index++ * 0.5)), 5);
                         c.setHSL(it.hsl.h, it.hsl.s, Math.min(1.0, flash * 3.0));
                         mesh.setColorAt(i, c);
                     });
@@ -277,6 +310,8 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         }
+
+        init(); // run after all declarations above
 
         // --- Christmas music: "We Wish You a Merry Christmas" (public-domain melody, WebAudio chiptune) ---
         const music = (() => {
@@ -356,7 +391,7 @@
         }
         tryStart();
         ['pointerdown', 'keydown', 'touchstart'].forEach((evt) =>
-            window.addEventListener(evt, tryStart, { once: true }),
+            window.addEventListener(evt, tryStart, { once: true, capture: true }),
         );
     </script>
 </body>
