@@ -73,8 +73,19 @@
         }
         #copy-link:active { border-color: #aaffaa; }
         #copy-link.done { border-color: #aaffaa; }
+        /* guide line under the field: a shared link usually arrives with a message already typed,
+           so the hint lives here (always visible) instead of as a placeholder */
+        #type-guide {
+            margin-top: 10px;
+            text-align: center;
+            font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa;
+            animation: guideBlink 1.4s ease-in-out infinite;
+        }
+        #type-guide.typed { animation: none; opacity: .55; }   /* calms down once you've typed something */
+        @keyframes guideBlink { 50% { opacity: .2; } }
         .tree-credit {
-            margin-top: 8px;
+            margin-top: 4px;
             text-align: center;
             font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
             color: #3f7f3f;
@@ -137,9 +148,10 @@
     <div id="controls-hint" aria-hidden="true"></div>
     <div id="tree-text-wrap">
         <div class="tree-row">
-            <div class="field-box"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"><span class="fake-caret" aria-hidden="true"></span></div>
+            <div class="field-box"><input id="tree-text" type="text" placeholder="" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"><span class="fake-caret" aria-hidden="true"></span></div>
             <button id="copy-link" type="button" aria-label="Copy a link to this tree" title="Copy a link to this tree">Share</button>
         </div>
+        <div id="type-guide">Type letters to grow your tree</div>
         <div class="tree-credit" style="position:relative">Created by <a href="https://www.instagram.com/wooramsol" target="_blank" rel="noopener">@wooramsol</a> · <a href="https://wooramsol.com/" target="_blank" rel="noopener">wooramsol.com</a><div id="copy-toast">Link copied — share your tree!</div></div>
     </div>
 
@@ -817,12 +829,12 @@
         // 16px (no iOS zoom) and no layout work happens on ordinary keystrokes.
         const measureCtx = document.createElement('canvas').getContext('2d');
         let fieldScale = 1;
-        // put the blinking hint caret right after the (centred) text, or before the placeholder
+        // put the blinking hint caret right after the (centred) text (centre of the box when empty)
         function placeCaret(input, w, sc) {
             const caret = input.parentElement.querySelector('.fake-caret');
             if (!caret) return;
             const half = (w * sc) / 2;
-            let x = input.value ? half + 2 : -half - 4;
+            let x = input.value ? half + 2 : -1;
             const box = input.parentElement.clientWidth / 2 - 10;
             x = Math.max(-box, Math.min(box, x));
             caret.style.transform = `translateX(${x.toFixed(1)}px)`;
@@ -830,9 +842,9 @@
 
         function fitFieldText(input) {
             const cs = getComputedStyle(input);
-            measureCtx.font = `${input.value ? cs.fontSize : '14px'} ${cs.fontFamily}`;   // placeholder is 14px
+            measureCtx.font = `${cs.fontSize} ${cs.fontFamily}`;
             const avail = input.parentElement.clientWidth - 16 - 4;             // minus padding, small safety
-            const w = measureCtx.measureText(input.value || input.placeholder).width;
+            const w = measureCtx.measureText(input.value).width;
             let sc = Math.min(1, avail / Math.max(1, w));
             sc = Math.max(0.5, Math.floor(sc * 20) / 20);                      // steps of 5%, so it rarely changes
             placeCaret(input, w, sc);
@@ -913,7 +925,9 @@
                 if (t !== input.value) input.value = t;
             };
             input.addEventListener('compositionend', () => { enforce(); input.dispatchEvent(new Event('input')); });
+            const guide = document.getElementById('type-guide');
             input.addEventListener('input', (e) => {
+                if (e.isTrusted) guide.classList.add('typed');
                 if (!e.isComposing) enforce();
                 fitFieldText(input);
                 clearTimeout(timer); timer = setTimeout(apply, 50);
