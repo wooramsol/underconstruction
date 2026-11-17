@@ -80,7 +80,7 @@ ffmpeg -ss 2 -i 원본.mov -frames:v 1 -vf "scale=-2:600" -q:v 80 폴더/poster.
 
 목표는 **이름 검색 시 이 사이트가 뜨는 것**입니다. 키워드: Ramsol, Ramsol Jeong, wooramsol, 람솔, 정우람솔, 우람솔, Inventor, Product Designer.
 
-- **메인페이지**: 제목·설명·Open Graph·`Person` 구조화 데이터(JSON-LD, 이름 별칭과 SNS 링크 포함)가 들어 있습니다. 화면 상단에는 "Ramsol Jeong · 정우람솔 · Inventor & Product Designer" 한 줄이 보입니다. SNS 계정이 늘면 JSON-LD의 `sameAs`에 추가합니다.
+- **메인페이지**: 제목·설명·Open Graph·`Person` 구조화 데이터(JSON-LD, 이름 별칭과 SNS 링크 포함)가 들어 있습니다. SNS 계정이 늘면 JSON-LD의 `sameAs`에 추가합니다.
 - **모든 페이지 `<head>`**: `viewport`, `description`, `canonical`, `og:*`(이미지는 `og.jpg`), 파비콘. 제목 형식은 `프로젝트명 — Ramsol Jeong (정우람솔), Product Designer`입니다.
 - **이미지 alt**: `프로젝트명 by Ramsol Jeong — image N`
 - **`sitemap.xml` / `robots.txt`**: 새 페이지를 만들면 sitemap에 추가합니다.
