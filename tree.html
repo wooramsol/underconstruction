@@ -66,7 +66,6 @@
         let scene, camera, renderer, treeGroup, starGroup, controls;
         let treeItems = [];          // fixed positions/colors; only the letters change
         let treeMeshes = [];
-        let targetScale = 1;
         let starMeshes = [];
         const glyphTextures = {};
 
@@ -110,6 +109,7 @@
             setTreeText(initialText());
             createOptimizedStar();
             setupInput();
+            fitCamera();
             animate();
 
             window.addEventListener('resize', onResize);
@@ -174,31 +174,22 @@
         }
 
         // Positions and colors are generated once; typing only swaps which letter each spot shows.
+        const TREE_H = 8.5, TREE_R = 4.0;
+
+        // Each spot keeps its own random seeds for the whole session. The actual position is
+        // recomputed from those seeds + a "complexity" value, so typing reshapes the tree smoothly
+        // instead of reshuffling it.
         function createTreeLayout() {
             const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
-            const particleCount = isMobile ? 10000 : 14000; // upper bound; how many show depends on text length
-            const treeHeight = 8.5;
-            const maxRadius = 4.0;
+            const particleCount = isMobile ? 11000 : 16000; // upper bound; how many show depends on text length
             treeItems = [];
-
             for (let i = 0; i < particleCount; i++) {
-                const heightDistribution = Math.pow(Math.random(), 2.0);
-                if (heightDistribution < 0.15 && Math.random() > heightDistribution * 4.0) continue;
+                const h = Math.pow(Math.random(), 2.0);
+                if (h < 0.15 && Math.random() > h * 4.0) continue;
 
-                const y = (heightDistribution * treeHeight) - (treeHeight / 2);
-                const baseConeRadius = maxRadius * (1 - heightDistribution);
-                const theta = Math.random() * Math.PI * 2;
-
-                let spikeFactor = 1.0;
-                if (Math.random() > 0.7) {
-                    spikeFactor = (0.9 + Math.random() * 0.2) + (Math.random() * 0.5 * (1.0 - heightDistribution));
-                }
-                const r = baseConeRadius * Math.sqrt(Math.random()) * spikeFactor;
-                const size = (0.11 + Math.random() * 0.02) * 1.25; // plane is a bit larger than the glyph itself
-
-                let alpha = THREE.MathUtils.smoothstep(heightDistribution, 0.0, 0.25);
+                let alpha = THREE.MathUtils.smoothstep(h, 0.0, 0.25);
                 alpha = 0.1 + alpha * 0.9;
-                const color = COLOR_BOTTOM.clone().lerp(COLOR_TOP, heightDistribution);
+                const color = COLOR_BOTTOM.clone().lerp(COLOR_TOP, h);
                 color.lerp(BG_COLOR, 1.0 - alpha);
                 const hsl = {};
                 color.getHSL(hsl);
@@ -208,26 +199,82 @@
                 color.setHSL(hsl.h, hsl.s, hsl.l);
                 color.lerp(BG_COLOR, 1.0 - alpha);
 
-                treeItems.push({ char: 'R', x: Math.cos(theta) * r, y, z: Math.sin(theta) * r, rotY: -theta, size, color, pick: Math.random(), rank: Math.random() });
+                treeItems.push({
+                    char: '.', h, color,
+                    size: (0.11 + Math.random() * 0.02) * 1.25,
+                    uTheta: Math.random(), uR: Math.random(), uSpike: Math.random(), uSpikeAmt: Math.random(),
+                    uBranch: Math.random(), uJit: Math.random(), uDroop: Math.random(),
+                    pick: Math.random(), rank: Math.random(),
+                });
             }
         }
 
+        // c = 0 (nothing typed) .. 1 (30 letters): more tiers, more branch arms, more spikes.
+        function placeItem(it, c) {
+            const tiers = 2 + Math.round(c * 7);                    // stacked layers of branches
+            const onBranch = it.uBranch < 0.15 + 0.6 * c;
+            let h = it.h;
+            let tierIdx = Math.floor(h * tiers);
+            let frac = h * tiers - tierIdx;
+            if (onBranch) {
+                // branch spots gather at the lower part of each layer, so the layers read clearly
+                frac = frac * (0.55 - 0.25 * c);
+                h = (tierIdx + frac) / tiers;
+            }
+            const tierShape = 1 - (0.2 + 0.45 * c) * frac / (onBranch ? 0.55 : 1); // each layer flares out at its bottom
+            const cone = TREE_R * (1 - h) * Math.max(0.35, tierShape);
+
+            let theta, r, droop = 0;
+            if (onBranch) {
+                const arms = 4 + Math.round(c * 10);                // more arms per layer
+                const arm = Math.floor(it.uTheta * arms);
+                theta = (arm / arms) * Math.PI * 2 + tierIdx * 0.9 + (it.uJit - 0.5) * (0.45 - 0.25 * c);
+                r = cone * (0.2 + 0.85 * it.uR);
+                droop = Math.pow(r / TREE_R, 1.5) * (0.3 + 0.6 * c);  // tips hang down
+            } else {
+                theta = it.uTheta * Math.PI * 2;
+                r = cone * Math.sqrt(it.uR) * (0.85 - 0.25 * c);    // inner volume gets relatively smaller
+            }
+            if (it.uSpike > 0.75 - 0.25 * c) {
+                r *= (0.9 + it.uSpikeAmt * 0.2) + it.uSpikeAmt * (0.3 + 0.4 * c) * (1.0 - h);
+            }
+            it.x = Math.cos(theta) * r;
+            it.z = Math.sin(theta) * r;
+            it.y = h * TREE_H - TREE_H / 2 - droop;
+            it.rotY = -theta;
+        }
+
         function textToChars(text) {
-            const chars = Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
-            return chars;
+            return Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
         }
 
         function setTreeText(text) {
             const chars = textToChars(text);
-            // More letters -> bigger, denser tree. Nothing typed -> a small tree made of '.' only.
-            const t = Math.sqrt(Math.min(chars.length, MAX_INPUT) / MAX_INPUT); // 0..1
-            const density = 0.45 + 0.55 * t;   // share of the pre-generated spots that are shown
-            targetScale = 0.85 + 0.35 * t;     // tree size (animated in animate())
+            // More letters -> denser, more branches, more complex. The size on screen stays the same.
+            // Nothing typed -> a sparse, simple tree made of '.' only.
+            const c = Math.sqrt(Math.min(chars.length, MAX_INPUT) / MAX_INPUT); // 0..1
+            const density = 0.35 + 0.65 * c;  // share of the pre-generated spots that are shown
             const glyphs = chars.length ? chars : ['.'];
             const shown = treeItems.filter((it) => it.rank < density);
-            shown.forEach((it) => { it.char = glyphs[Math.floor(it.pick * glyphs.length)]; });
+            shown.forEach((it) => { placeItem(it, c); it.char = glyphs[Math.floor(it.pick * glyphs.length)]; });
             disposeMeshes(treeMeshes);
             treeMeshes = buildInstanced(treeGroup, shown);
+        }
+
+        // Fit the whole tree (incl. star, above the text field) to the screen; same size whatever is typed.
+        function fitCamera() {
+            const top = 0.8 + 4.8 + 0.7;            // star top (treeGroup is raised by 0.8)
+            const bottom = 0.8 - TREE_H / 2 - 0.6;  // lowest drooping tips
+            const halfW = TREE_R * 1.15;
+            const reserve = 1.6;                    // room for the text field at the bottom
+            const halfH = (top - bottom + reserve) / 2;
+            const centerY = (top + bottom - reserve) / 2;
+            const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+            const dist = Math.max(halfH / tanHalf, halfW / (tanHalf * camera.aspect)) * 1.04;
+            controls.target.set(0, centerY, 0);
+            camera.position.set(0, centerY, dist);
+            controls.maxDistance = Math.max(30, dist * 1.5);
+            controls.update();
         }
 
         function createOptimizedStar() {
@@ -301,8 +348,6 @@
             requestAnimationFrame(animate);
             controls.update();
             treeGroup.rotation.y += 0.008;
-            const sc = treeGroup.scale.x + (targetScale - treeGroup.scale.x) * 0.08; // smooth grow/shrink
-            treeGroup.scale.setScalar(sc);
 
             if (starGroup) {
                 starGroup.rotation.y -= 0.016;
@@ -327,6 +372,7 @@
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            fitCamera();
         }
 
         init(); // run after all declarations above
