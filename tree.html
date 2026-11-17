@@ -258,7 +258,9 @@
                 z = Math.sin(theta) * r;
                 y = h * TREE_H - TREE_H / 2;
             }
-            it.x = x; it.y = y; it.z = z;
+            // overall girth: slim when little is typed, full width at 30 letters (height stays the same)
+            const girth = 0.55 + 0.45 * c;
+            it.x = x * girth; it.y = y; it.z = z * girth;
             colorFor(it, y);
             it.rotY = -theta;
         }
