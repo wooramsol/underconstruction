@@ -1,0 +1,25 @@
+/* Project image gallery — default layout for all project pages.
+   Desktop: 2-column masonry (gallery.js keeps reading order row by row).
+   Mobile (<=600px): single column in original order. */
+.gallery {
+  max-width: 1000px;
+  margin: 20px auto;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+.gallery img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 10px;
+}
+.gallery.is-masonry {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.gallery-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
