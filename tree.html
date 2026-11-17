@@ -55,7 +55,8 @@
             white-space: pre-wrap;
             word-break: break-all;      /* long words / 한글 wrap instead of being cut off */
             color: #aaffaa;
-            background: rgba(1, 3, 1, 0.75);
+            background: #010301;        /* opaque: cheaper for the browser to repaint while typing */
+            contain: layout paint style;
             border: 1px solid #0f400f;
             border-radius: 6px;
             outline: none;
@@ -659,7 +660,10 @@
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
             // the field grows to show everything you typed (no cut-off), then the tree area is re-fitted
             let lastFieldH = 0;
+            let lastLen = -1;
             const autoGrow = () => {
+                if (input.value.length === lastLen) return;
+                lastLen = input.value.length;
                 input.style.height = 'auto';
                 const fh = input.scrollHeight;
                 input.style.height = fh + 'px';
@@ -672,6 +676,16 @@
                 clearTimeout(timer); timer = setTimeout(apply, 50);
             });
             input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+            // While the phone keyboard is up, the phone is busy drawing the keyboard, predictions and the
+            // text field. Give it room: render the tree at 1x pixels and 30 fps until the keyboard closes.
+            const setTyping = (on) => {
+                if (!IS_PHONE || typingMode === on) return;
+                typingMode = on;
+                lastLayout = '';
+                scheduleResize();
+            };
+            input.addEventListener('focus', () => setTyping(true));
+            input.addEventListener('blur', () => setTyping(false));
             requestAnimationFrame(autoGrow);
             // keep the 3D controls from reacting while typing
             ['pointerdown', 'touchstart', 'keydown'].forEach((e) => input.addEventListener(e, (ev) => ev.stopPropagation()));
@@ -679,6 +693,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            if (typingMode && (animate.skip = !animate.skip)) return;   // every other frame while typing
             controls.update();
             // time-based, so a slow frame doesn't look like the tree stopped
             const now = performance.now();
@@ -714,6 +729,7 @@
         // On phones the visible area shrinks when the keyboard opens, so the tree shrinks with it
         // instead of being pushed off the top.
         let lastLayout = '';
+        let typingMode = false;   // phone keyboard open: render lighter so the keyboard stays responsive
         let resizeQueued = false;
         function scheduleResize() {           // coalesce bursts (keyboard animation, typing) into one per frame
             if (resizeQueued) return;
@@ -732,7 +748,7 @@
             const key = W + 'x' + h + '@' + top;
             if (key === lastLayout) return;
             lastLayout = key;
-            renderer.setPixelRatio(PIXEL_RATIO);
+            renderer.setPixelRatio(typingMode ? 1 : PIXEL_RATIO);
             renderer.setSize(W, h);
             renderer.domElement.style.top = top + 'px';
             camera.aspect = W / h;
@@ -796,7 +812,7 @@
                 frames++;
                 if (now - tSec >= 1000) { fps = frames * 1000 / (now - tSec); frames = 0; tSec = now; }
                 const over = hist.filter((d) => d > 34).length;
-                stats.textContent = `fps ${fps.toFixed(0)} | frame ${dt.toFixed(0)}ms | worst ${worst.toFixed(0)}ms | stutters(>34ms) in last 150: ${over} | letters ${Array.from(input.value).length}`;
+                stats.textContent = `fps ${fps.toFixed(0)} | frame ${dt.toFixed(0)}ms | worst ${worst.toFixed(0)}ms | stutters(>34ms) in last 150: ${over} | letters ${Array.from(input.value).length} | keyboard mode ${typingMode ? 'ON (1x, 30fps)' : 'off'}`;
                 g.clearRect(0, 0, 300, 40);
                 hist.forEach((d, i) => {
                     g.fillStyle = d > 34 ? '#f44' : d > 20 ? '#fa0' : '#4c4';
