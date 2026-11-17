@@ -71,9 +71,24 @@ ffmpeg -ss 2 -i 원본.mov -frames:v 1 -vf "scale=-2:600" -q:v 80 폴더/poster.
 - `desc`: 줄바꿈은 `\n`입니다. 링크는 `<a href="…" target="_blank" rel="noopener">…</a>`로 넣습니다.
 - 본문 끝 데모 링크는 한 줄 띄우고 `Demo: 링크` 형식으로 씁니다.
 
+5. **`node build.js`를 실행합니다.** 메인페이지 프로젝트 목록을 `index.html`에 HTML로 미리 써 넣는 단계입니다. 검색엔진과 링크 미리보기가 JS 없이도 프로젝트를 읽을 수 있게 해줍니다. 빠뜨려도 화면은 정상으로 보이지만(JS가 다시 그림), 검색에는 옛 목록이 노출됩니다.
+6. 상세 페이지를 만들었다면 **`og.jpg`**(1200×630, 대표 이미지를 잘라서 JPEG 품질 82)를 프로젝트 폴더에 넣고, **`sitemap.xml`**에 주소를 추가합니다.
+
 ---
 
-## 3. 레이아웃 규칙
+## 3. SEO 기준
+
+목표는 **이름 검색 시 이 사이트가 뜨는 것**입니다. 키워드: Ramsol, Ramsol Jeong, wooramsol, 람솔, 정우람솔, 우람솔, Inventor, Product Designer.
+
+- **메인페이지**: 제목·설명·Open Graph·`Person` 구조화 데이터(JSON-LD, 이름 별칭과 SNS 링크 포함)가 들어 있습니다. 화면 상단에는 "Ramsol Jeong · 정우람솔 · Inventor & Product Designer" 한 줄이 보입니다. SNS 계정이 늘면 JSON-LD의 `sameAs`에 추가합니다.
+- **모든 페이지 `<head>`**: `viewport`, `description`, `canonical`, `og:*`(이미지는 `og.jpg`), 파비콘. 제목 형식은 `프로젝트명 — Ramsol Jeong (정우람솔), Product Designer`입니다.
+- **이미지 alt**: `프로젝트명 by Ramsol Jeong — image N`
+- **`sitemap.xml` / `robots.txt`**: 새 페이지를 만들면 sitemap에 추가합니다.
+- **검색엔진 등록**: Google Search Console과 네이버 서치어드바이저에 `https://wooramsol.com/sitemap.xml`을 제출해둡니다.
+
+---
+
+## 4. 레이아웃 규칙
 
 - **메인페이지 (데스크톱):** 이미지(높이 300px) 옆에 텍스트가 붙습니다. 텍스트는 남은 폭에 맞춰 줄이 바뀝니다. 텍스트 칸이 220px보다 좁아지면 이미지가 비율을 유지하며 작아집니다. 텍스트가 이미지 아래로 내려가거나 화면 밖으로 나가지 않습니다.
 - **메인페이지 (모바일, 폭 850px 이하):** 대표 이미지 1장 → 텍스트, 세로 1열입니다.
@@ -82,13 +97,13 @@ ffmpeg -ss 2 -i 원본.mov -frames:v 1 -vf "scale=-2:600" -q:v 80 폴더/poster.
 
 ---
 
-## 4. 소프트웨어 프로젝트
+## 5. 소프트웨어 프로젝트
 
 앱 자체는 각자의 GitHub 레포에서 관리하고 GitHub Pages로 배포합니다(예: `wooramsol/blinktype`). 이 사이트에는 썸네일·영상과 소개 글만 두고, `link`로 앱 주소에 연결합니다.
 
 ---
 
-## 5. 보안 메모
+## 6. 보안 메모
 
 - Open Diary 글·댓글은 화면에 넣기 전에 `escapeHtml`로 처리합니다. 사용자 입력을 `innerHTML`에 그대로 넣지 않습니다.
 - Open Diary의 삭제·수정은 Firestore 규칙으로 막혀 있습니다. 삭제는 Firebase 콘솔에서 합니다.

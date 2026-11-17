@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /_project_template.html
+
+Sitemap: https://wooramsol.com/sitemap.xml

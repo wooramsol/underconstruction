@@ -23,3 +23,15 @@
   flex: 1 1 0;
   min-width: 0;
 }
+
+/* Project pages now declare a real mobile viewport, so undo the old
+   "zoomed-out desktop" sizing from styles.css (description at 2em). */
+@media (max-width: 1024px) {
+  body .description { font-size: 1em; }
+}
+@media (max-width: 600px) {
+  body { margin: 10px auto; }
+  body h1 { font-size: 1.8em; margin: 30px 10px !important; }
+  body h2 { font-size: 1.5em; }
+  body .description { margin: 15px 10px; }
+}
