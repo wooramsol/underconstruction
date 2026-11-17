@@ -1023,13 +1023,35 @@
         //  - stats/trees {count}: public counter, can only go up by exactly 1 per write (see Firestore rules)
         //  - treeShares/{id} {text, seed, createdAt}: write-only from the page; only visible in the Firebase console
         let shareDb = null;
-        const sharedKeys = new Set();          // count each message/tree only once per visit
+        const pendingShares = [];               // Share pressed before Firebase finished loading
+        // count each message/tree once per browser (survives reloads, so refreshing + Share doesn't inflate)
+        const SHARED_KEY = 'treeSharedKeys';
+        const sharedKeys = (() => { try { return new Set(JSON.parse(localStorage.getItem(SHARED_KEY) || '[]')); } catch (e) { return new Set(); } })();
+        const rememberShared = () => { try { localStorage.setItem(SHARED_KEY, JSON.stringify([...sharedKeys].slice(-200))); } catch (e) {} };
+        let shownCount = null;
+
         function loadScript(src) {
             return new Promise((ok, fail) => {
                 const sc = document.createElement('script');
                 sc.src = src; sc.async = true; sc.onload = ok; sc.onerror = fail;
                 document.head.appendChild(sc);
             });
+        }
+        function showCount(n) {
+            shownCount = n;
+            document.getElementById('tree-count-n').textContent = n.toLocaleString('en-US');
+            document.getElementById('tree-count').classList.add('ready');
+        }
+        // Read the counter once on load and then once a minute while the page is visible.
+        // (A live listener would cost one database read per viewer for EVERY share made anywhere,
+        //  which could use up the free daily quota quickly during promotion.)
+        async function refreshCount() {
+            if (!shareDb || document.hidden) return;
+            try {
+                const d = await shareDb.collection('stats').doc('trees').get();
+                const n = (d.exists && d.data().count) || 0;
+                if (shownCount === null || n > shownCount) showCount(n);
+            } catch (e) {}
         }
         async function setupShareCounter() {
             try {
@@ -1044,25 +1066,27 @@
                     appId: '1:570226771031:web:795ef86749ea312b2a8f12',
                 });
                 shareDb = app.firestore();
-                const box = document.getElementById('tree-count'), num = document.getElementById('tree-count-n');
-                shareDb.collection('stats').doc('trees').onSnapshot((d) => {
-                    num.textContent = ((d.exists && d.data().count) || 0).toLocaleString('en-US');
-                    box.classList.add('ready');
-                }, () => {});
-            } catch (e) { /* offline or blocked: the tree still works, just without the counter */ }
+                await refreshCount();
+                setInterval(refreshCount, 60000);
+                document.addEventListener('visibilitychange', refreshCount);
+                pendingShares.splice(0).forEach(logShare);
+            } catch (e) { /* offline or blocked (e.g. ad blocker): the tree still works, just without the counter */ }
         }
         function logShare(text) {
-            if (!shareDb) return;
+            if (!shareDb) { pendingShares.push(text); return; }
             const key = TREE_SEED + '|' + text;
             if (sharedKeys.has(key)) return;   // pressing Share again for the same tree doesn't count twice
             sharedKeys.add(key);
+            rememberShared();
             const fv = firebase.firestore.FieldValue;
             shareDb.collection('treeShares').add({
-                text: text.slice(0, 60),
+                text: Array.from(text).slice(0, 40).join(''),   // whole characters only (no broken emoji)
                 seed: TREE_SEED.toString(36),
                 createdAt: fv.serverTimestamp(),
             }).catch(() => {});
-            shareDb.collection('stats').doc('trees').set({ count: fv.increment(1) }, { merge: true }).catch(() => {});
+            shareDb.collection('stats').doc('trees').set({ count: fv.increment(1) }, { merge: true })
+                .then(() => { if (shownCount !== null) showCount(shownCount + 1); })   // show your own share right away
+                .catch(() => {});
         }
 
         init(); // run after all declarations above
