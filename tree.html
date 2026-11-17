@@ -175,13 +175,14 @@
 
         // Positions and colors are generated once; typing only swaps which letter each spot shows.
         const TREE_H = 8.5, TREE_R = 4.0;
+        const MIN_GIRTH = 0.6, MAX_GIRTH = 1.6;
 
         // Each spot keeps its own random seeds for the whole session. The actual position is
         // recomputed from those seeds + a "complexity" value, so typing reshapes the tree smoothly
         // instead of reshuffling it.
         function createTreeLayout() {
             const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
-            const particleCount = isMobile ? 11000 : 16000; // upper bound; how many show depends on text length
+            const particleCount = isMobile ? 14000 : 22000; // upper bound; how many show depends on text length
             treeItems = [];
             for (let i = 0; i < particleCount; i++) {
                 const h = Math.pow(Math.random(), 2.0);
@@ -196,6 +197,20 @@
                     pick: Math.random(), rank: Math.random(),
                 });
             }
+            measureMaxExtent();
+        }
+
+        // How wide the tree gets at 30 letters (ignoring the few most extreme tips),
+        // so the camera can fit that once and keep the same size for every input.
+        let FIT_R = TREE_R * MAX_GIRTH;
+        function measureMaxExtent() {
+            const tmp = { color: new THREE.Color() };
+            const radii = treeItems.map((it) => {
+                Object.assign(tmp, it, { color: tmp.color });
+                placeItem(tmp, 1);
+                return Math.hypot(tmp.x, tmp.z);
+            }).sort((a, b) => a - b);
+            FIT_R = radii[Math.floor(radii.length * 0.97)] || FIT_R;
         }
 
         // c = 0 (nothing typed) .. 1 (30 letters): more tiers, more branch arms, more spikes.
@@ -219,7 +234,7 @@
         // colour follows the spot's actual height (dark green at the bottom, light at the top)
         function colorFor(it, y) {
             const h = THREE.MathUtils.clamp((y + TREE_H / 2) / TREE_H, 0, 1);
-            const alpha = 0.1 + THREE.MathUtils.smoothstep(h, 0.0, 0.25) * 0.9;
+            const alpha = 0.15 + THREE.MathUtils.smoothstep(h, 0.0, 0.15) * 0.85; // lower part stays visible so the broad base reads
             const col = it.color.copy(COLOR_BOTTOM).lerp(COLOR_TOP, h).lerp(BG_COLOR, 1.0 - alpha);
             const hsl = {};
             col.getHSL(hsl);
@@ -252,14 +267,15 @@
                 // soft cone body
                 const h = it.h;
                 theta = it.uTheta * Math.PI * 2;
-                let r = TREE_R * (1 - h) * Math.sqrt(it.uR) * (0.9 - 0.3 * c);
+                let r = TREE_R * Math.pow(1 - h, 0.85) * Math.sqrt(it.uR) * 0.9; // gently bell-shaped outline
                 if (it.uSpike > 0.7) r *= (0.9 + it.uSpikeAmt * 0.2) + it.uSpikeAmt * 0.5 * (1.0 - h);
                 x = Math.cos(theta) * r;
                 z = Math.sin(theta) * r;
                 y = h * TREE_H - TREE_H / 2;
             }
-            // overall girth: slim when little is typed, full width at 30 letters (height stays the same)
-            const girth = 0.55 + 0.45 * c;
+            // overall girth (outer silhouette): slim when little is typed, very broad at 30 letters.
+            // Height stays the same; the camera is fitted to the widest case so it always fits on screen.
+            const girth = MIN_GIRTH + (MAX_GIRTH - MIN_GIRTH) * c;
             it.x = x * girth; it.y = y; it.z = z * girth;
             colorFor(it, y);
             it.rotY = -theta;
@@ -286,7 +302,7 @@
         function fitCamera() {
             const top = 0.8 + 4.8 + 0.7;            // star top (treeGroup is raised by 0.8)
             const bottom = 0.8 - TREE_H / 2 - 0.6;  // lowest drooping tips
-            const halfW = TREE_R * 1.15;
+            const halfW = FIT_R * 1.08;             // a little extra for perspective (near side looks bigger)
             const reserve = 1.6;                    // room for the text field at the bottom
             const halfH = (top - bottom + reserve) / 2;
             const centerY = (top + bottom - reserve) / 2;
