@@ -66,6 +66,7 @@
         let scene, camera, renderer, treeGroup, starGroup, controls;
         let treeItems = [];          // fixed positions/colors; only the letters change
         let treeMeshes = [];
+        let targetScale = 1;
         let starMeshes = [];
         const glyphTextures = {};
 
@@ -126,7 +127,12 @@
             g.textAlign = 'center';
             g.textBaseline = 'middle';
             g.font = `bold ${S * 0.82}px "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
-            g.fillText(char, S / 2, S / 2 + S * 0.04);
+            if (char === '.') {
+                // a bare period sits on the baseline and is tiny; draw it as a centred dot instead
+                g.beginPath(); g.arc(S / 2, S / 2, S * 0.11, 0, Math.PI * 2); g.fill();
+            } else {
+                g.fillText(char, S / 2, S / 2 + S * 0.04);
+            }
             const tex = new THREE.CanvasTexture(c);
             tex.minFilter = THREE.LinearMipMapLinearFilter;
             tex.anisotropy = 4;
@@ -170,7 +176,7 @@
         // Positions and colors are generated once; typing only swaps which letter each spot shows.
         function createTreeLayout() {
             const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
-            const particleCount = isMobile ? 7000 : 10000;
+            const particleCount = isMobile ? 10000 : 14000; // upper bound; how many show depends on text length
             const treeHeight = 8.5;
             const maxRadius = 4.0;
             treeItems = [];
@@ -202,7 +208,7 @@
                 color.setHSL(hsl.h, hsl.s, hsl.l);
                 color.lerp(BG_COLOR, 1.0 - alpha);
 
-                treeItems.push({ char: 'R', x: Math.cos(theta) * r, y, z: Math.sin(theta) * r, rotY: -theta, size, color, pick: Math.random() });
+                treeItems.push({ char: 'R', x: Math.cos(theta) * r, y, z: Math.sin(theta) * r, rotY: -theta, size, color, pick: Math.random(), rank: Math.random() });
             }
         }
 
@@ -213,11 +219,15 @@
 
         function setTreeText(text) {
             const chars = textToChars(text);
+            // More letters -> bigger, denser tree. Nothing typed -> a small tree made of '.' only.
+            const t = Math.sqrt(Math.min(chars.length, MAX_INPUT) / MAX_INPUT); // 0..1
+            const density = 0.45 + 0.55 * t;   // share of the pre-generated spots that are shown
+            targetScale = 0.85 + 0.35 * t;     // tree size (animated in animate())
+            const glyphs = chars.length ? chars : ['.'];
+            const shown = treeItems.filter((it) => it.rank < density);
+            shown.forEach((it) => { it.char = glyphs[Math.floor(it.pick * glyphs.length)]; });
             disposeMeshes(treeMeshes);
-            treeMeshes = [];
-            if (!chars.length) return; // nothing typed -> no letters (the star stays)
-            treeItems.forEach((it) => { it.char = chars[Math.floor(it.pick * chars.length)]; });
-            treeMeshes = buildInstanced(treeGroup, treeItems);
+            treeMeshes = buildInstanced(treeGroup, shown);
         }
 
         function createOptimizedStar() {
@@ -291,6 +301,8 @@
             requestAnimationFrame(animate);
             controls.update();
             treeGroup.rotation.y += 0.008;
+            const sc = treeGroup.scale.x + (targetScale - treeGroup.scale.x) * 0.08; // smooth grow/shrink
+            treeGroup.scale.setScalar(sc);
 
             if (starGroup) {
                 starGroup.rotation.y -= 0.016;
