@@ -48,12 +48,8 @@
             font-size: 16px; /* 16px+ stops iOS from zooming on focus */
             font-family: inherit;
             text-align: center;
-            line-height: 1.35;
-            resize: none;
-            overflow: hidden;
             display: block;
-            white-space: pre-wrap;
-            word-break: break-all;      /* long words / 한글 wrap instead of being cut off */
+            transform-origin: 50% 50%;  /* long text is shrunk with a transform to fit (see fitFieldText) */
             color: #aaffaa;
             background: #010301;        /* opaque: cheaper for the browser to repaint while typing */
             contain: layout paint style;
@@ -62,34 +58,16 @@
             outline: none;
         }
         #tree-text:focus { border-color: #aaffaa; }
-        /* test variants (tree.html?test=1&field=static / &el=input) */
-        body.field-static { position: static; }
-        body.field-static #tree-text-wrap { position: relative; left: auto; top: auto; transform: none; margin: max(16px, env(safe-area-inset-top)) auto 0; }
         #tree-text::placeholder { color: #3f7f3f; font-size: 14px; }
     </style>
 </head>
 <body>
-    <div id="tree-text-wrap"><textarea id="tree-text" rows="2" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Letters for the tree"></textarea></div>
+    <div id="tree-text-wrap"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
-        // ---- test variants for the keyboard-lag hunt
-        (function applyVariants() {
-            const q = new URLSearchParams(location.search);
-            if (q.get('field') === 'static') document.body.classList.add('field-static');
-            if (q.get('el') === 'input') {
-                const ta = document.getElementById('tree-text');
-                const inp = document.createElement('input');
-                inp.type = 'text';
-                for (const a of ['id', 'placeholder', 'autocomplete', 'autocorrect', 'autocapitalize', 'spellcheck', 'aria-label']) {
-                    if (ta.hasAttribute(a)) inp.setAttribute(a, ta.getAttribute(a));
-                }
-                ta.replaceWith(inp);
-            }
-        })();
-
         let scene, camera, renderer, treeGroup, starGroup, controls;
         let starMeshes = [];
         const glyphTextures = {};
@@ -660,15 +638,31 @@
             } catch (e) { return EXAMPLE_TEXT; }
         }
 
+        // Single-line field (a multi-line textarea made iPhones stutter on every key).
+        // So that nothing gets cut off, long text is shrunk to fit with a CSS transform: the font stays
+        // 16px (no iOS zoom) and no layout work happens on ordinary keystrokes.
+        const measureCtx = document.createElement('canvas').getContext('2d');
+        let fieldScale = 1;
+        function fitFieldText(input) {
+            const cs = getComputedStyle(input);
+            measureCtx.font = `${cs.fontSize} ${cs.fontFamily}`;
+            const avail = input.parentElement.clientWidth - 30;                 // minus padding
+            const w = measureCtx.measureText(input.value || input.placeholder).width;
+            let sc = Math.min(1, avail / Math.max(1, w));
+            sc = Math.max(0.5, Math.floor(sc * 20) / 20);                      // steps of 5%, so it rarely changes
+            if (sc === fieldScale) return;
+            fieldScale = sc;
+            input.style.transform = sc < 1 ? `scale(${sc})` : '';
+            input.style.width = sc < 1 ? `${100 / sc}%` : '';
+            input.style.marginLeft = sc < 1 ? `${-(100 / sc - 100) / 2}%` : '';
+        }
+
         function setupInput() {
             const input = document.getElementById('tree-text');
-            input.maxLength = 40;   // 30 letters + some spaces; always fits in the two lines
+            input.maxLength = 40;   // 30 letters + some spaces
             input.value = initialText();
-            let timer = 0;
-            let urlTimer = 0;
+            let timer = 0, urlTimer = 0;
             const saveUrl = () => {
-                if (!PERF.url) return;
-                const t0 = performance.now();
                 try {
                     const url = new URL(location.href);
                     const v = input.value.trim();
@@ -676,56 +670,26 @@
                     else url.searchParams.set('text', v);                   // '' is kept too, so a reload stays empty
                     history.replaceState(null, '', url);
                 } catch (e) {}
-                perfLog('url', performance.now() - t0);
             };
             const apply = () => {
-                if (PERF.tree) {
-                    const t0 = performance.now();
-                    setTreeText(input.value);
-                    perfLog('tree', performance.now() - t0);
-                }
+                setTreeText(input.value);
                 // Safari slows down / blocks frequent history.replaceState calls, so only save the
                 // text to the URL once typing has stopped for a moment.
                 clearTimeout(urlTimer); urlTimer = setTimeout(saveUrl, 1200);
             };
             // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
-            // The field is a fixed two-line box: everything fits (max 40 characters), and its height never
-            // changes while typing. (Resizing a text box on every key made iPhones stutter.)
-            let lastFieldH = 0;
-            let lastLen = -1;
-            const autoGrow = () => {
-                if (!PERF.grow || input.tagName !== 'TEXTAREA') return;
-                if (input.value.length === lastLen) return;
-                lastLen = input.value.length;
-                input.style.height = 'auto';
-                const fh = input.scrollHeight;
-                input.style.height = fh + 'px';
-                if (fh !== lastFieldH) { lastFieldH = fh; scheduleResize(); } // only when a line is added/removed
-            };
             input.addEventListener('input', () => {
-                perfLog('key', 0);
-                if (/\n/.test(input.value)) input.value = input.value.replace(/\n/g, ''); // single line of text, wrapped
-                // updates are cheap now (a few GPU numbers), so react almost immediately
+                fitFieldText(input);
                 clearTimeout(timer); timer = setTimeout(apply, 50);
             });
             input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
-            // While the phone keyboard is up, the phone is busy drawing the keyboard, predictions and the
-            // text field. Give it room: render the tree at 1x pixels and 30 fps until the keyboard closes.
-            const setTyping = (on) => {
-                if (!IS_PHONE || typingMode === on) return;
-                typingMode = on;
-                lastLayout = '';
-                scheduleResize();
-            };
-            input.addEventListener('focus', () => setTyping(true));
-            input.addEventListener('blur', () => setTyping(false));
+            fitFieldText(input);
             // keep the 3D controls from reacting while typing
             ['pointerdown', 'touchstart', 'keydown'].forEach((e) => input.addEventListener(e, (ev) => ev.stopPropagation()));
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            if (typingMode && (animate.skip = !animate.skip)) return;   // every other frame while typing
             controls.update();
             // time-based, so a slow frame doesn't look like the tree stopped
             const now = performance.now();
@@ -754,18 +718,13 @@
                 });
             }
 
-            if (PERF.render) renderer.render(scene, camera);
+            renderer.render(scene, camera);
         }
 
         // The tree lives in the space between the text field and the bottom of the *visible* screen.
         // On phones the visible area shrinks when the keyboard opens, so the tree shrinks with it
         // instead of being pushed off the top.
-        // switches used by the test mode (?test=1) to turn parts off one by one
-        const PERF = { tree: true, url: true, grow: true, render: true, resize: true };
-        const perfEvents = [];
-        function perfLog(what, ms) { if (perfEvents.length < 400) perfEvents.push([performance.now(), what, ms]); }
         let lastLayout = '';
-        let typingMode = false;   // phone keyboard open: render lighter so the keyboard stays responsive
         let resizeQueued = false;
         function scheduleResize() {           // coalesce bursts (keyboard animation, typing) into one per frame
             if (resizeQueued) return;
@@ -773,12 +732,6 @@
             requestAnimationFrame(() => { resizeQueued = false; onResize(); });
         }
         function onResize() {
-            if (!PERF.resize && lastLayout) return;
-            const t0 = performance.now();
-            onResizeInner();
-            perfLog('resize', performance.now() - t0);
-        }
-        function onResizeInner() {
             const vv = window.visualViewport;
             const W = window.innerWidth;
             const H = vv ? vv.height : window.innerHeight;
@@ -790,7 +743,7 @@
             const key = W + 'x' + h + '@' + top;
             if (key === lastLayout) return;
             lastLayout = key;
-            renderer.setPixelRatio(typingMode ? 1 : PIXEL_RATIO);
+            renderer.setPixelRatio(PIXEL_RATIO);
             renderer.setSize(W, h);
             renderer.domElement.style.top = top + 'px';
             camera.aspect = W / h;
@@ -798,112 +751,7 @@
             fitCamera();
         }
 
-        // ---- Performance test mode: open tree.html?test=1
-        // Shows frame times and adds letters with on-screen buttons (no keyboard), so typing-with-keyboard
-        // can be compared against the same tree updates without the keyboard involved.
-        function setupPerfTest() {
-            if (!/[?&]test=1/.test(location.search)) return;
-            const box = document.createElement('div');
-            box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:max(12px,env(safe-area-inset-bottom));z-index:20;font:12px monospace;color:#ff0;background:rgba(0,0,0,.75);border:1px solid #444;border-radius:6px;padding:8px;touch-action:manipulation';
-            box.innerHTML = `
-                <div style="display:flex;gap:8px;align-items:center">
-                    <canvas id="pt-spin" width="44" height="44" style="position:static;width:44px;height:44px;flex:none"></canvas>
-                    <div id="pt-stats" style="flex:1">measuring…</div>
-                </div>
-                <canvas id="pt-graph" width="300" height="40" style="position:static;width:100%;height:40px;display:block;margin:6px 0;background:#111"></canvas>
-                <div style="display:flex;gap:6px;flex-wrap:wrap">
-                    <button data-a="add">+1 letter</button>
-                    <button data-a="add5">+5</button>
-                    <button data-a="del">−1</button>
-                    <button data-a="auto">auto add (0.4s)</button>
-                    <button data-a="clear">clear</button>
-                    <button data-a="reset">reset worst</button>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-                    <button data-t="tree">tree update: ON</button>
-                    <button data-t="url">URL save: ON</button>
-                    <button data-t="grow">field grow: ON</button>
-                    <button data-t="resize">resize: ON</button>
-                    <button data-t="render">3D render: ON</button>
-                </div>
-                <div id="pt-log" style="margin-top:6px;white-space:pre;max-height:96px;overflow:auto;color:#ccc"></div>`;
-            box.querySelectorAll('button').forEach((b) => (b.style.cssText = 'font:13px monospace;padding:8px 10px;background:#0f400f;color:#aaffaa;border:1px solid #3f7f3f;border-radius:4px'));
-            document.body.appendChild(box);
-            ['pointerdown', 'touchstart', 'keydown'].forEach((e) => box.addEventListener(e, (ev) => ev.stopPropagation()));
-
-            const input = document.getElementById('tree-text');
-            const pool = 'RAMSOLMERRYCHRISTMAS메리크리스마스정우람솔';
-            const setText = (t) => { input.value = t; input.dispatchEvent(new Event('input')); };
-            let auto = 0;
-            box.addEventListener('click', (e) => {
-                const t = e.target.dataset && e.target.dataset.t;
-                if (t) {
-                    PERF[t] = !PERF[t];
-                    e.target.textContent = e.target.textContent.replace(/ON|OFF/, PERF[t] ? 'ON' : 'OFF');
-                    e.target.style.background = PERF[t] ? '#0f400f' : '#5a1010';
-                    return;
-                }
-                const a = e.target.dataset && e.target.dataset.a;
-                if (!a) return;
-                const addOne = () => setText(input.value + pool[Math.floor(Math.random() * pool.length)]);
-                if (a === 'add') addOne();
-                if (a === 'add5') for (let i = 0; i < 5; i++) addOne();
-                if (a === 'del') setText(Array.from(input.value).slice(0, -1).join(''));
-                if (a === 'clear') setText('');
-                if (a === 'reset') worst = 0;
-                if (a === 'auto') {
-                    if (auto) { clearInterval(auto); auto = 0; e.target.textContent = 'auto add (0.4s)'; }
-                    else {
-                        auto = setInterval(() => { if (Array.from(input.value).length >= 30) setText(''); else addOne(); }, 400);
-                        e.target.textContent = 'stop auto';
-                    }
-                }
-            });
-
-            const g = document.getElementById('pt-graph').getContext('2d');
-            const stats = document.getElementById('pt-stats');
-            const hist = [];
-            let last = performance.now(), worst = 0, frames = 0, tSec = last, fps = 0;
-            const longLog = [];
-            const spin = document.getElementById('pt-spin').getContext('2d');
-            (function tick() {
-                const now = performance.now(), dt = now - last;
-                last = now;
-                hist.push(dt); if (hist.length > 150) hist.shift();
-                worst = Math.max(worst, dt);
-                if (dt > 34) {
-                    const since = perfEvents.filter((ev) => ev[0] > now - dt - 1).map((ev) => `${ev[1]} ${ev[2].toFixed(1)}ms`);
-                    const vv = window.visualViewport;
-                    longLog.unshift(`${(now / 1000).toFixed(1)}s  frame ${dt.toFixed(0)}ms  vv ${vv ? Math.round(vv.height) : '-'}  ${since.join(', ') || '(no work of ours)'}`);
-                    longLog.length = Math.min(longLog.length, 12);
-                    document.getElementById('pt-log').textContent = longLog.join('\n');
-                }
-                if (perfEvents.length > 300) perfEvents.splice(0, 200);
-                frames++;
-                if (now - tSec >= 1000) { fps = frames * 1000 / (now - tSec); frames = 0; tSec = now; }
-                const over = hist.filter((d) => d > 34).length;
-                stats.textContent = `fps ${fps.toFixed(0)} | frame ${dt.toFixed(0)}ms | worst ${worst.toFixed(0)}ms | stutters(>34ms) in last 150: ${over} | letters ${Array.from(input.value).length} | keyboard mode ${typingMode ? 'ON (1x, 30fps)' : 'off'} | variant: ${document.getElementById('tree-text').tagName.toLowerCase()}${document.body.classList.contains('field-static') ? ' + static field' : ' + fixed field'}`;
-                g.clearRect(0, 0, 300, 40);
-                hist.forEach((d, i) => {
-                    g.fillStyle = d > 34 ? '#f44' : d > 20 ? '#fa0' : '#4c4';
-                    const h = Math.min(40, d);
-                    g.fillRect(i * 2, 40 - h, 2, h);
-                });
-                g.fillStyle = '#666'; g.fillRect(0, 40 - 16.7, 300, 1);
-                // JS-driven spinner: it turns at a steady speed every frame, so any freeze of the page
-                // (with or without the 3D tree) shows up as the spinner visibly jumping.
-                const sp = spin;
-                sp.clearRect(0, 0, 44, 44);
-                sp.strokeStyle = '#333'; sp.lineWidth = 2; sp.beginPath(); sp.arc(22, 22, 18, 0, Math.PI * 2); sp.stroke();
-                const ang = (now / 1000) * Math.PI * 2 * 0.75;
-                sp.strokeStyle = '#ff0'; sp.lineWidth = 4; sp.beginPath(); sp.moveTo(22, 22);
-                sp.lineTo(22 + Math.cos(ang) * 18, 22 + Math.sin(ang) * 18); sp.stroke();
-                requestAnimationFrame(tick);
-            })();
-        }
-
         init(); // run after all declarations above
-        setupPerfTest();
 
         // --- Christmas music: "We Wish You a Merry Christmas" (public-domain melody, WebAudio chiptune) ---
         const music = (() => {
