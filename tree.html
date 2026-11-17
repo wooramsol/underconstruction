@@ -98,6 +98,15 @@
             color: #aaffaa; opacity: 0; transition: opacity .2s; pointer-events: none;
         }
         #copy-toast.show { opacity: 1; }
+        #tree-count {
+            position: fixed; left: 12px; bottom: max(14px, env(safe-area-inset-bottom));
+            z-index: 10; pointer-events: none;
+            font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #3f7f3f; line-height: 1.5;
+            opacity: 0; transition: opacity .6s;
+        }
+        #tree-count.ready { opacity: 1; }
+        #tree-count b { color: #6fbf6f; font-weight: 600; }
         #controls-hint {
             position: fixed; right: 12px; bottom: max(14px, env(safe-area-inset-bottom));
             z-index: 10; pointer-events: none;
@@ -145,6 +154,7 @@
 <body>
     <div id="tap-hint">tap to play ♪</div>
     <div id="controls-hint" aria-hidden="true"></div>
+    <div id="tree-count">Trees made so far<br><b id="tree-count-n">–</b></div>
     <div id="tree-text-wrap">
         <div class="tree-row">
             <div class="field-box"><input id="tree-text" type="text" placeholder="" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"><span class="fake-caret" aria-hidden="true"></span></div>
@@ -894,6 +904,7 @@
                 try {
                     await navigator.clipboard.writeText(link);
                     copied('Link copied — share your tree!');
+                    logShare(input.value.trim());
                 } catch (e) {
                     // older browsers: copy through a temporary text field
                     const tmp = document.createElement('textarea');
@@ -906,6 +917,7 @@
                     try { ok = document.execCommand('copy'); } catch (e2) {}
                     tmp.remove();
                     copied(ok ? 'Link copied — share your tree!' : link);
+                    logShare(input.value.trim());
                 }
             });
             // keep the 3D controls from reacting to taps on the button / credit link
@@ -1006,7 +1018,55 @@
             fitCamera();
         }
 
+        // ---- "Trees made so far" counter + private log of shared messages (Firebase Firestore,
+        // same project as the Open Diary). Loaded after the page is up so it never slows the tree down.
+        //  - stats/trees {count}: public counter, can only go up by exactly 1 per write (see Firestore rules)
+        //  - treeShares/{id} {text, seed, createdAt}: write-only from the page; only visible in the Firebase console
+        let shareDb = null;
+        const sharedKeys = new Set();          // count each message/tree only once per visit
+        function loadScript(src) {
+            return new Promise((ok, fail) => {
+                const sc = document.createElement('script');
+                sc.src = src; sc.async = true; sc.onload = ok; sc.onerror = fail;
+                document.head.appendChild(sc);
+            });
+        }
+        async function setupShareCounter() {
+            try {
+                await loadScript('https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js');
+                await loadScript('https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js');
+                const app = firebase.apps.length ? firebase.app() : firebase.initializeApp({
+                    apiKey: 'AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI',
+                    authDomain: 'sscv2-98e6a.firebaseapp.com',
+                    projectId: 'sscv2-98e6a',
+                    storageBucket: 'sscv2-98e6a.firebasestorage.app',
+                    messagingSenderId: '570226771031',
+                    appId: '1:570226771031:web:795ef86749ea312b2a8f12',
+                });
+                shareDb = app.firestore();
+                const box = document.getElementById('tree-count'), num = document.getElementById('tree-count-n');
+                shareDb.collection('stats').doc('trees').onSnapshot((d) => {
+                    num.textContent = ((d.exists && d.data().count) || 0).toLocaleString('en-US');
+                    box.classList.add('ready');
+                }, () => {});
+            } catch (e) { /* offline or blocked: the tree still works, just without the counter */ }
+        }
+        function logShare(text) {
+            if (!shareDb) return;
+            const key = TREE_SEED + '|' + text;
+            if (sharedKeys.has(key)) return;   // pressing Share again for the same tree doesn't count twice
+            sharedKeys.add(key);
+            const fv = firebase.firestore.FieldValue;
+            shareDb.collection('treeShares').add({
+                text: text.slice(0, 60),
+                seed: TREE_SEED.toString(36),
+                createdAt: fv.serverTimestamp(),
+            }).catch(() => {});
+            shareDb.collection('stats').doc('trees').set({ count: fv.increment(1) }, { merge: true }).catch(() => {});
+        }
+
         init(); // run after all declarations above
+        setTimeout(setupShareCounter, 1500);
 
         // --- Christmas music: "We Wish You a Merry Christmas" (public-domain melody, WebAudio chiptune) ---
         const music = (() => {
