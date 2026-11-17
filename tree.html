@@ -41,6 +41,36 @@
             z-index: 10;
             width: min(320px, calc(100vw - 40px));
         }
+        .tree-row { display: flex; gap: 8px; align-items: stretch; }
+        .field-box { flex: 1; min-width: 0; position: relative; }
+        #copy-link {
+            flex: none;
+            width: 46px;
+            font-size: 18px;
+            color: #aaffaa;
+            background: #010301;
+            border: 1px solid #0f400f;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 0;
+        }
+        #copy-link:active { border-color: #aaffaa; }
+        #copy-link.done { border-color: #aaffaa; }
+        .tree-credit {
+            margin-top: 8px;
+            text-align: center;
+            font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #3f7f3f;
+        }
+        .tree-credit a { color: #6fbf6f; text-decoration: none; }
+        .tree-credit a:hover { text-decoration: underline; }
+        #copy-toast {
+            position: absolute; left: 0; right: 0; top: 100%;
+            margin-top: 6px; text-align: center;
+            font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa; opacity: 0; transition: opacity .2s; pointer-events: none;
+        }
+        #copy-toast.show { opacity: 1; }
         #tree-text {
             width: 100%;
             box-sizing: border-box;
@@ -63,13 +93,36 @@
     </style>
 </head>
 <body>
-    <div id="tree-text-wrap"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"></div>
+    <div id="tree-text-wrap">
+        <div class="tree-row">
+            <div class="field-box"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"></div>
+            <button id="copy-link" type="button" aria-label="Copy a link to this tree" title="Copy link">🔗</button>
+        </div>
+        <div class="tree-credit" style="position:relative">Created by <a href="https://www.instagram.com/wooramsol" target="_blank" rel="noopener">@wooramsol</a><div id="copy-toast">Link copied — share your tree!</div></div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
         let scene, camera, renderer, treeGroup, starGroup, controls;
+
+        // Every tree grows from a random seed. The seed goes into the shared link (&seed=), so whoever
+        // opens the link sees exactly the same tree and message.
+        const TREE_SEED = (() => {
+            const q = new URLSearchParams(location.search).get('seed');
+            const n = parseInt(q, 36);
+            return Number.isFinite(n) && n > 0 ? n : 1 + Math.floor(Math.random() * 2147483646);
+        })();
+        const rand = (() => {                       // mulberry32
+            let a = TREE_SEED >>> 0;
+            return () => {
+                a = (a + 0x6D2B79F5) | 0;
+                let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        })();
         let starMeshes = [];
         const glyphTextures = {};
 
@@ -236,9 +289,9 @@
             const A = isMobile ? 1100 : 1500;
             const pts = [];
             while (pts.length < A) {
-                const y = GROUND + TREE_H * (0.13 + 0.87 * Math.random());
+                const y = GROUND + TREE_H * (0.13 + 0.87 * rand());
                 const R = envelopeRadius(y);
-                const x = (Math.random() * 2 - 1) * TREE_R, z = (Math.random() * 2 - 1) * TREE_R;
+                const x = (rand() * 2 - 1) * TREE_R, z = (rand() * 2 - 1) * TREE_R;
                 if (x * x + z * z <= R * R) pts.push({ x, y, z, alive: true });
             }
 
@@ -419,8 +472,8 @@
             // Sparse, slightly dimmed like the other branches, and gently bent at random (it still meets
             // the star at the top and the crown at the bottom).
             const LEADER = 55;
-            const bendA = 0.12 + Math.random() * 0.18, bendDir = Math.random() * Math.PI * 2;
-            const wigA = 0.04 + Math.random() * 0.05, wigPh = Math.random() * Math.PI * 2;
+            const bendA = 0.12 + rand() * 0.18, bendDir = rand() * Math.PI * 2;
+            const wigA = 0.04 + rand() * 0.05, wigPh = rand() * Math.PI * 2;
             for (let j = 0; j < LEADER; j++) {
                 const u = j / (LEADER - 1);
                 const bend = bendA * Math.sin(Math.PI * u);
@@ -635,17 +688,17 @@
             let attempts = 0;
             while (items.length < 600 && attempts < 10000) {
                 attempts++;
-                const rx = (Math.random() - 0.5) * 2 * outerRadius;
-                const ry = centerY + (Math.random() - 0.5) * 2 * outerRadius;
+                const rx = (rand() - 0.5) * 2 * outerRadius;
+                const ry = centerY + (rand() - 0.5) * 2 * outerRadius;
                 if (!isPointInPolygon(rx, ry, vertices)) continue;
                 const distRatio = Math.sqrt(rx * rx + (ry - centerY) * (ry - centerY)) / outerRadius;
-                const rz = (Math.random() - 0.5) * 2 * (1.0 - distRatio) * thicknessFactor;
-                const size = (0.08 + (1.0 - distRatio) * 0.06 + Math.random() * 0.04) * 1.3;
-                const color = (Math.random() > 0.05) ? STAR_COLOR_YELLOW.clone() : STAR_COLOR_WHITE.clone();
+                const rz = (rand() - 0.5) * 2 * (1.0 - distRatio) * thicknessFactor;
+                const size = (0.08 + (1.0 - distRatio) * 0.06 + rand() * 0.04) * 1.3;
+                const color = (rand() > 0.05) ? STAR_COLOR_YELLOW.clone() : STAR_COLOR_WHITE.clone();
                 const hsl = {};
                 color.getHSL(hsl);
                 // random facing so the flat glyphs never all turn edge-on together while the star spins
-                items.push({ char: '*', x: rx, y: ry, z: rz, rotY: Math.random() * Math.PI, size, color, hsl });
+                items.push({ char: '*', x: rx, y: ry, z: rz, rotY: rand() * Math.PI, size, color, hsl });
             }
             starMeshes = buildInstanced(starGroup, items);
             treeGroup.add(starGroup);
@@ -693,15 +746,55 @@
             input.maxLength = MAX_UNITS;   // hard cap; the real limit (by width) is applied below
             input.value = limitUnits(initialText());
             let timer = 0, urlTimer = 0;
+            const shareUrl = () => {
+                const url = new URL(location.href);
+                url.search = '';
+                url.hash = '';
+                url.searchParams.set('text', input.value.trim());
+                url.searchParams.set('seed', TREE_SEED.toString(36));
+                return url.toString();
+            };
             const saveUrl = () => {
                 try {
-                    const url = new URL(location.href);
                     const v = input.value.trim();
-                    if (v === EXAMPLE_TEXT) url.searchParams.delete('text'); // clean URL for the example
-                    else url.searchParams.set('text', v);                   // '' is kept too, so a reload stays empty
-                    history.replaceState(null, '', url);
+                    if (v === EXAMPLE_TEXT && !/[?&]seed=/.test(location.search)) return; // keep a clean URL for the example
+                    history.replaceState(null, '', shareUrl());
                 } catch (e) {}
             };
+            // copy-link button: the link recreates this exact message and tree
+            const copyBtn = document.getElementById('copy-link');
+            const toast = document.getElementById('copy-toast');
+            let toastTimer = 0;
+            const copied = (msg) => {
+                toast.textContent = msg;
+                toast.classList.add('show');
+                copyBtn.classList.add('done');
+                copyBtn.textContent = '✓';
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => { toast.classList.remove('show'); copyBtn.classList.remove('done'); copyBtn.textContent = '🔗'; }, 1800);
+            };
+            copyBtn.addEventListener('click', async () => {
+                const link = shareUrl();
+                try {
+                    await navigator.clipboard.writeText(link);
+                    copied('Link copied — share your tree!');
+                } catch (e) {
+                    // older browsers: copy through a temporary text field
+                    const tmp = document.createElement('textarea');
+                    tmp.value = link;
+                    tmp.setAttribute('readonly', '');
+                    tmp.style.cssText = 'position:fixed;top:-100px;opacity:0';
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    let ok = false;
+                    try { ok = document.execCommand('copy'); } catch (e2) {}
+                    tmp.remove();
+                    copied(ok ? 'Link copied — share your tree!' : link);
+                }
+            });
+            // keep the 3D controls from reacting to taps on the button / credit link
+            [copyBtn, document.querySelector('.tree-credit')].forEach((el) =>
+                ['pointerdown', 'touchstart'].forEach((e) => el.addEventListener(e, (ev) => ev.stopPropagation())));
             const apply = () => {
                 setTreeText(input.value);
                 // Safari slows down / blocks frequent history.replaceState calls, so only save the
