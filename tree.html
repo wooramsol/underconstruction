@@ -45,14 +45,13 @@
         .field-box { flex: 1; min-width: 0; position: relative; }
         #copy-link {
             flex: none;
-            width: 46px;
-            font-size: 18px;
+            padding: 0 14px;
+            font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
             color: #aaffaa;
             background: #010301;
             border: 1px solid #0f400f;
             border-radius: 6px;
             cursor: pointer;
-            padding: 0;
         }
         #copy-link:active { border-color: #aaffaa; }
         #copy-link.done { border-color: #aaffaa; }
@@ -71,6 +70,17 @@
             color: #aaffaa; opacity: 0; transition: opacity .2s; pointer-events: none;
         }
         #copy-toast.show { opacity: 1; }
+        #tap-hint {
+            position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            z-index: 10; pointer-events: none;   /* taps go straight through to the page */
+            padding: 7px 14px; border-radius: 999px;
+            font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa; background: rgba(1, 3, 1, 0.7); border: 1px solid #0f400f;
+            opacity: 0; transition: opacity .4s;
+        }
+        #tap-hint.show { opacity: 1; animation: hintPulse 1.8s ease-in-out infinite; }
+        @keyframes hintPulse { 50% { opacity: .45; } }
         #tree-text {
             width: 100%;
             box-sizing: border-box;
@@ -93,10 +103,11 @@
     </style>
 </head>
 <body>
+    <div id="tap-hint">tap to play ♪</div>
     <div id="tree-text-wrap">
         <div class="tree-row">
             <div class="field-box"><input id="tree-text" type="text" placeholder="Type letters to grow your tree" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"></div>
-            <button id="copy-link" type="button" aria-label="Copy a link to this tree" title="Copy link">🔗</button>
+            <button id="copy-link" type="button" aria-label="Copy a link to this tree" title="Copy a link to this tree">Share</button>
         </div>
         <div class="tree-credit" style="position:relative">Created by <a href="https://www.instagram.com/wooramsol" target="_blank" rel="noopener">@wooramsol</a><div id="copy-toast">Link copied — share your tree!</div></div>
     </div>
@@ -769,9 +780,9 @@
                 toast.textContent = msg;
                 toast.classList.add('show');
                 copyBtn.classList.add('done');
-                copyBtn.textContent = '✓';
+                copyBtn.textContent = 'Copied';
                 clearTimeout(toastTimer);
-                toastTimer = setTimeout(() => { toast.classList.remove('show'); copyBtn.classList.remove('done'); copyBtn.textContent = '🔗'; }, 1800);
+                toastTimer = setTimeout(() => { toast.classList.remove('show'); copyBtn.classList.remove('done'); copyBtn.textContent = 'Share'; }, 1800);
             };
             copyBtn.addEventListener('click', async () => {
                 const link = shareUrl();
@@ -972,6 +983,13 @@
         }
         tryStart();
         UNLOCK_EVENTS.forEach((evt) => window.addEventListener(evt, tryStart, true));
+        // small "tap to play" hint while the browser is still holding the sound back
+        const tapHint = document.getElementById('tap-hint');
+        setTimeout(() => { if (!music.running()) tapHint.classList.add('show'); }, 600);
+        (function watchSound() {
+            if (music.running()) { tapHint.classList.remove('show'); setTimeout(() => tapHint.remove(), 500); return; }
+            setTimeout(watchSound, 250);
+        })();
     </script>
 </body>
 </html>
