@@ -69,9 +69,8 @@
         let starMeshes = [];
         const glyphTextures = {};
 
-        const DEFAULT_CHARS = ['R', 'A', 'M', 'S', 'O', 'L', '*'];
         const MAX_INPUT = 30;
-        const DEFAULT_TEXT = 'RAMSOL'; // pre-filled in the text field on first load
+        const EXAMPLE_TEXT = 'RAMSOL'; // only a pre-filled example on first load; an empty field = empty tree
 
         const BG_COLOR = new THREE.Color(0x010301);
         const COLOR_BOTTOM = new THREE.Color(0x0f400f);
@@ -209,13 +208,15 @@
 
         function textToChars(text) {
             const chars = Array.from((text || '').replace(/\s+/g, '')).slice(0, MAX_INPUT);
-            return chars.length ? chars : DEFAULT_CHARS;
+            return chars;
         }
 
         function setTreeText(text) {
             const chars = textToChars(text);
-            treeItems.forEach((it) => { it.char = chars[Math.floor(it.pick * chars.length)]; });
             disposeMeshes(treeMeshes);
+            treeMeshes = [];
+            if (!chars.length) return; // nothing typed -> no letters (the star stays)
+            treeItems.forEach((it) => { it.char = chars[Math.floor(it.pick * chars.length)]; });
             treeMeshes = buildInstanced(treeGroup, treeItems);
         }
 
@@ -259,7 +260,10 @@
 
         // ---- Text field: live rebuild while typing; the text is kept in the URL (?text=) so a tree can be shared.
         function initialText() {
-            try { return new URLSearchParams(location.search).get('text') || DEFAULT_TEXT; } catch (e) { return DEFAULT_TEXT; }
+            try {
+                const q = new URLSearchParams(location.search);
+                return q.has('text') ? q.get('text') : EXAMPLE_TEXT;
+            } catch (e) { return EXAMPLE_TEXT; }
         }
 
         function setupInput() {
@@ -271,8 +275,9 @@
                 setTreeText(input.value);
                 try {
                     const url = new URL(location.href);
-                    if (input.value.trim() && input.value.trim() !== DEFAULT_TEXT) url.searchParams.set('text', input.value.trim());
-                    else url.searchParams.delete('text');
+                    const v = input.value.trim();
+                    if (v === EXAMPLE_TEXT) url.searchParams.delete('text'); // clean URL for the example
+                    else url.searchParams.set('text', v);                   // '' is kept too, so a reload stays empty
                     history.replaceState(null, '', url);
                 } catch (e) {}
             };
