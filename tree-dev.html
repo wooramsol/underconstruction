@@ -1116,6 +1116,7 @@
             groundMax: IS_PHONE ? 1200 : 2000,    // snow on the ground
             debrisMax: 1500,
             cell: 0.22,                           // size of the "columns" used to find where flakes land
+            build: 3,                             // snow particles added per landed flake (3x faster build-up)
         };
         let snowReady = false, snowTop = null, snowStage = -1;
         let fallPts, fallPos, fallVel, stuckPts, stuckPos, debrisPts, debrisPos, groundPts, groundPos;
@@ -1244,8 +1245,17 @@
                 if (top && lpy >= top.y && ly < top.y + 0.02) {
                     if (stuck.length < SNOW.stuckMax) {
                         const p = glyphPos(top.g, [0, 0, 0]);
-                        stuck.push({ g: top.g, ox: lx - p[0], oy: 0.05 + Math.random() * 0.04, oz: lz - p[2] });
-                        top.y += 0.012;            // snow piles up a little
+                        // each landing flake leaves a small clump (SNOW.build), so snow builds up faster
+                        // while the falling speed stays the same
+                        for (let b = 0; b < SNOW.build && stuck.length < SNOW.stuckMax; b++) {
+                            stuck.push({
+                                g: top.g,
+                                ox: lx - p[0] + (Math.random() - 0.5) * 0.08,
+                                oy: 0.05 + Math.random() * 0.05,
+                                oz: lz - p[2] + (Math.random() - 0.5) * 0.08,
+                            });
+                        }
+                        top.y += 0.012 * SNOW.build;   // snow piles up a little
                         respawnFlake(i, false);
                         continue;
                     }
