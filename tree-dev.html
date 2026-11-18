@@ -1229,7 +1229,10 @@
 
         function updateSnow(dt) {
             if (!snowReady) { if (GLY && FIT_R) setupSnow(); else return; }
-            if (snowTop === null || Math.abs(stageNow - snowStage) > 0.25) rebuildSnowTop();
+            // Recompute where snow can land only once the tree has finished growing/shrinking
+            // (doing it during the grow animation would cost a few ms per step on phones).
+            const settled = Math.abs(stageTarget - stageNow) < 0.05;
+            if (snowTop === null || (settled && Math.abs(stageNow - snowStage) > 0.05)) rebuildSnowTop();
             const time = performance.now() / 1000;
             const rot = treeGroup.rotation.y, cs = Math.cos(rot), sn = Math.sin(rot);
             const C = SNOW.cell;

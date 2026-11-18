@@ -449,6 +449,7 @@
         const ATLAS_CELL = 128, ATLAS_COLS = 8, ATLAS_ROWS = 4;          // 32 letter slots, each drawn once
         let treeMesh = null, treeMat = null, atlasTex = null, atlasCtx = null;
         let stageTarget = 0, stageNow = 0;
+        let GLY = null;   // CPU copy of every letter's growth data (used by the snow)
         let leaderFromAt = [], leaderToAt = [];
 
         function buildGrowth() {
@@ -576,6 +577,12 @@
             geo.setAttribute('aLeader', at(A.leader, 1));
             geo.setAttribute('aColor', at(A.color, 3));
             geo.instanceCount = A.rot.length;
+            GLY = {
+                n: A.rot.length, S,
+                base: Float32Array.from(A.base), dir: Float32Array.from(A.dir),
+                rA: Float32Array.from(A.rA), rF: Float32Array.from(A.rF),
+                ap: Float32Array.from(A.appear), van: Float32Array.from(A.vanish), leader: Float32Array.from(A.leader),
+            };
 
             // letter atlas: redrawn (small) whenever the typed letters change
             const canvas = document.createElement('canvas');
@@ -696,7 +703,9 @@
             // growth stage: nothing typed = a young sapling, 20 한글 / 40 English letters = fully grown
             const units = chars.reduce((a, ch) => a + charUnits(ch), 0);
             const c = Math.pow(Math.min(units, MAX_UNITS) / MAX_UNITS, 0.75);
-            stageTarget = (0.38 + 0.62 * c) * maxBirth;
+            const newTarget = (0.38 + 0.62 * c) * maxBirth;
+            if (stageNow && Math.abs(newTarget - stageTarget) > 1e-6) snowShake(Math.abs(newTarget - stageTarget) / maxBirth);
+            stageTarget = newTarget;
             if (!stageNow) stageNow = stageTarget;
             applyStage();
         }
@@ -985,6 +994,7 @@
                 });
             }
 
+            updateSnow(dt);
             renderer.render(scene, camera);
         }
 
@@ -1087,6 +1097,216 @@
             shareDb.collection('stats').doc('trees').set({ count: fv.increment(1) }, { merge: true })
                 .then(() => { if (shownCount !== null) showCount(shownCount + 1); })   // show your own share right away
                 .catch(() => {});
+        }
+
+        // ================= Snow =================
+        // 1) Snowflakes fall with a little wind.
+        // 2) A flake that reaches the upper surface of the tree sticks to the letter it landed on
+        //    (only the topmost letter in each little column of space can catch snow, like a real roof).
+        //    Stuck snow rides along with that letter, so it turns with the tree and moves as branches thicken.
+        //    The longer the page stays open, the more snow builds up.
+        // 3) When the tree grows or shrinks, it shakes: snow on letters that disappear always falls, and
+        //    some of the rest is knocked off. Falling clumps fly outward, drop with gravity and settle on
+        //    the ground around the tree.
+        const SNOW = {
+            fall: IS_PHONE ? 600 : 1000,          // flakes in the air
+            stuckMax: IS_PHONE ? 1800 : 3200,     // most snow the tree can hold
+            groundMax: IS_PHONE ? 1200 : 2000,    // snow on the ground
+            debrisMax: 1500,
+            cell: 0.22,                           // size of the "columns" used to find where flakes land
+            build: 3,                             // snow particles added per landed flake (3x faster build-up)
+        };
+        let snowReady = false, snowTop = null, snowStage = -1;
+        let fallPts, fallPos, fallVel, stuckPts, stuckPos, debrisPts, debrisPos, groundPts, groundPos;
+        const stuck = [];      // {g: letter index, ox, oy, oz}
+        const debris = [];     // {x,y,z, vx,vy,vz}
+        let groundN = 0, groundNext = 0;
+        let stuckDirty = true, groundDirty = false, lastStuckStage = -1;   // only re-upload what changed
+        let fallRadius = 6, fallTop = 8, groundY = -3.5;
+
+        function snowTexture() {
+            const c = document.createElement('canvas'); c.width = c.height = 32;
+            const g = c.getContext('2d');
+            const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+            grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.45, 'rgba(255,255,255,.85)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+            g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+            return new THREE.CanvasTexture(c);
+        }
+        function makePoints(n, size, opacity, parent) {
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(n * 3).fill(1e5);
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+            geo.setDrawRange(0, 0);
+            const mat = new THREE.PointsMaterial({ size, map: SNOW_TEX, transparent: true, opacity, depthWrite: false, color: 0xffffff, sizeAttenuation: true });
+            const pts = new THREE.Points(geo, mat);
+            pts.frustumCulled = false;
+            parent.add(pts);
+            return [pts, pos];
+        }
+        let SNOW_TEX = null;
+
+        function setupSnow() {
+            SNOW_TEX = snowTexture();
+            fallRadius = FIT_R * 1.25;
+            fallTop = 0.8 + FIT_TOP + 3;
+            groundY = 0.8 + GROUND;
+            [fallPts, fallPos] = makePoints(SNOW.fall, 0.07, 0.9, scene);
+            fallVel = new Float32Array(SNOW.fall * 2);
+            for (let i = 0; i < SNOW.fall; i++) respawnFlake(i, true);
+            fallPts.geometry.setDrawRange(0, SNOW.fall);
+            [stuckPts, stuckPos] = makePoints(SNOW.stuckMax, 0.085, 0.95, treeGroup);   // rides with the tree
+            [debrisPts, debrisPos] = makePoints(SNOW.debrisMax, 0.08, 0.95, scene);
+            [groundPts, groundPos] = makePoints(SNOW.groundMax, 0.1, 0.8, scene);
+            snowReady = true;
+        }
+        function respawnFlake(i, anywhere) {
+            const a = Math.random() * Math.PI * 2, r = fallRadius * Math.sqrt(Math.random());
+            fallPos[i * 3] = Math.cos(a) * r;
+            fallPos[i * 3 + 1] = anywhere ? groundY + Math.random() * (fallTop - groundY) : fallTop + Math.random() * 2;
+            fallPos[i * 3 + 2] = Math.sin(a) * r;
+            fallVel[i * 2] = 0.55 + Math.random() * 0.5;           // fall speed
+            fallVel[i * 2 + 1] = Math.random() * Math.PI * 2;      // sway phase
+        }
+
+        // where a letter is right now (tree-local coordinates), mirroring the GPU code
+        function glyphPos(i, out) {
+            const S = GLY.S, ap = GLY.ap[i];
+            const t = Math.min(1, Math.max(0, (stageNow - ap) / Math.max(1, S - ap)));
+            const r = GLY.rA[i] + (GLY.rF[i] - GLY.rA[i]) * t;
+            out[0] = GLY.base[i * 3] + GLY.dir[i * 3] * r;
+            out[1] = GLY.base[i * 3 + 1] + GLY.dir[i * 3 + 1] * r;
+            out[2] = GLY.base[i * 3 + 2] + GLY.dir[i * 3 + 2] * r;
+            return out;
+        }
+        function glyphVisible(i, stage) {
+            return GLY.leader[i] < 0 && stage >= GLY.ap[i] + 0.5 && stage < GLY.van[i] + 0.5;
+        }
+
+        // the highest visible letter in every small column (x,z) = the tree's snow-catching surface
+        function rebuildSnowTop() {
+            snowTop = new Map();
+            const p = [0, 0, 0], C = SNOW.cell;
+            for (let i = 0; i < GLY.n; i++) {
+                if (!glyphVisible(i, stageNow)) continue;
+                glyphPos(i, p);
+                const k = Math.floor(p[0] / C) + ',' + Math.floor(p[2] / C);
+                const cur = snowTop.get(k);
+                if (cur === undefined || p[1] > cur.y) snowTop.set(k, { y: p[1], g: i });
+            }
+            snowStage = stageNow;
+        }
+
+        function addGround(x, z) {
+            const k = groundNext; groundNext = (groundNext + 1) % SNOW.groundMax; groundN = Math.min(SNOW.groundMax, groundN + 1);
+            groundPos[k * 3] = x; groundPos[k * 3 + 1] = groundY + Math.random() * 0.05; groundPos[k * 3 + 2] = z;
+            groundDirty = true;
+        }
+
+        function snowShake(strength) {
+            if (!snowReady || !stuck.length) return;
+            const knock = Math.min(0.7, 0.12 + strength * 4);    // bigger change = harder shake
+            const rot = treeGroup.rotation.y, cs = Math.cos(rot), sn = Math.sin(rot);
+            const p = [0, 0, 0];
+            let keep = 0;
+            for (let k = 0; k < stuck.length; k++) {
+                const s = stuck[k];
+                const gone = !glyphVisible(s.g, stageTarget);
+                if (!gone && Math.random() > knock) { stuck[keep++] = s; continue; }   // stays on the tree
+                stuckDirty = true;
+                if (debris.length >= SNOW.debrisMax) continue;
+                glyphPos(s.g, p);
+                const lx = p[0] + s.ox, ly = p[1] + s.oy, lz = p[2] + s.oz;
+                // tree-local -> world (tree is rotated about Y and raised by 0.8)
+                const wx = lx * cs + lz * sn, wz = -lx * sn + lz * cs, wy = ly + 0.8;
+                const rr = Math.hypot(wx, wz) || 1;
+                const out = 0.4 + Math.random() * 1.2;
+                debris.push({ x: wx, y: wy, z: wz, vx: (wx / rr) * out + (Math.random() - 0.5) * 0.4, vy: 0.6 + Math.random() * 1.2, vz: (wz / rr) * out + (Math.random() - 0.5) * 0.4 });
+            }
+            stuck.length = keep;
+        }
+
+        function updateSnow(dt) {
+            if (!snowReady) { if (GLY && FIT_R) setupSnow(); else return; }
+            // Recompute where snow can land only once the tree has finished growing/shrinking
+            // (doing it during the grow animation would cost a few ms per step on phones).
+            const settled = Math.abs(stageTarget - stageNow) < 0.05;
+            if (snowTop === null || (settled && Math.abs(stageNow - snowStage) > 0.05)) rebuildSnowTop();
+            const time = performance.now() / 1000;
+            const rot = treeGroup.rotation.y, cs = Math.cos(rot), sn = Math.sin(rot);
+            const C = SNOW.cell;
+
+            // 1) falling flakes
+            for (let i = 0; i < SNOW.fall; i++) {
+                const o = i * 3;
+                const py = fallPos[o + 1];
+                const ny = py - fallVel[i * 2] * dt;
+                fallPos[o] += Math.sin(time * 0.8 + fallVel[i * 2 + 1]) * 0.25 * dt + 0.06 * dt;   // sway + light wind
+                fallPos[o + 2] += Math.cos(time * 0.6 + fallVel[i * 2 + 1]) * 0.2 * dt;
+                fallPos[o + 1] = ny;
+                // world -> tree-local to see if it lands on the tree
+                const x = fallPos[o], z = fallPos[o + 2];
+                const lx = x * cs - z * sn, lz = x * sn + z * cs, ly = ny - 0.8, lpy = py - 0.8;
+                const top = snowTop.get(Math.floor(lx / C) + ',' + Math.floor(lz / C));
+                if (top && lpy >= top.y && ly < top.y + 0.02) {
+                    if (stuck.length < SNOW.stuckMax) {
+                        const p = glyphPos(top.g, [0, 0, 0]);
+                        // each landing flake leaves a small clump (SNOW.build), so snow builds up faster
+                        // while the falling speed stays the same
+                        for (let b = 0; b < SNOW.build && stuck.length < SNOW.stuckMax; b++) {
+                            stuck.push({
+                                g: top.g,
+                                ox: lx - p[0] + (Math.random() - 0.5) * 0.08,
+                                oy: 0.05 + Math.random() * 0.05,
+                                oz: lz - p[2] + (Math.random() - 0.5) * 0.08,
+                            });
+                        }
+                        top.y += 0.012 * SNOW.build;   // snow piles up a little
+                        stuckDirty = true;
+                        respawnFlake(i, false);
+                        continue;
+                    }
+                }
+                if (ny < groundY) {
+                    if (Math.random() < 0.06) addGround(x, z);   // a gentle carpet builds on the ground
+                    respawnFlake(i, false);
+                }
+            }
+            fallPts.geometry.attributes.position.needsUpdate = true;
+
+            // 2) snow on the tree follows its letters. It's in the tree's own coordinates, so the tree's
+            //    rotation moves it for free; positions only need recomputing when the tree grows/shrinks
+            //    or snow is added/removed (not every frame).
+            if (stuckDirty || stageNow !== lastStuckStage) {
+                const p = [0, 0, 0];
+                for (let k = 0; k < stuck.length; k++) {
+                    const s = stuck[k];
+                    glyphPos(s.g, p);
+                    stuckPos[k * 3] = p[0] + s.ox; stuckPos[k * 3 + 1] = p[1] + s.oy; stuckPos[k * 3 + 2] = p[2] + s.oz;
+                }
+                stuckPts.geometry.setDrawRange(0, stuck.length);
+                stuckPts.geometry.attributes.position.needsUpdate = true;
+                stuckDirty = false; lastStuckStage = stageNow;
+            }
+
+            // 3) shaken-off clumps: gravity, then they settle on the ground
+            for (let k = debris.length - 1; k >= 0; k--) {
+                const d = debris[k];
+                d.vy -= 7 * dt; d.vx *= 0.99; d.vz *= 0.99;
+                d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+                if (d.y <= groundY) { addGround(d.x, d.z); debris[k] = debris[debris.length - 1]; debris.pop(); }
+            }
+            for (let k = 0; k < debris.length; k++) {
+                debrisPos[k * 3] = debris[k].x; debrisPos[k * 3 + 1] = debris[k].y; debrisPos[k * 3 + 2] = debris[k].z;
+            }
+            if (debris.length || debrisPts.geometry.drawRange.count) {
+                debrisPts.geometry.setDrawRange(0, debris.length);
+                debrisPts.geometry.attributes.position.needsUpdate = true;
+            }
+            if (groundDirty) {
+                groundPts.geometry.setDrawRange(0, groundN);
+                groundPts.geometry.attributes.position.needsUpdate = true;
+                groundDirty = false;
+            }
         }
 
         init(); // run after all declarations above
