@@ -1123,6 +1123,7 @@
         const stuck = [];      // {g: letter index, ox, oy, oz}
         const debris = [];     // {x,y,z, vx,vy,vz}
         let groundN = 0, groundNext = 0;
+        let stuckDirty = true, groundDirty = false, lastStuckStage = -1;   // only re-upload what changed
         let fallRadius = 6, fallTop = 8, groundY = -3.5;
 
         function snowTexture() {
@@ -1200,6 +1201,7 @@
         function addGround(x, z) {
             const k = groundNext; groundNext = (groundNext + 1) % SNOW.groundMax; groundN = Math.min(SNOW.groundMax, groundN + 1);
             groundPos[k * 3] = x; groundPos[k * 3 + 1] = groundY + Math.random() * 0.05; groundPos[k * 3 + 2] = z;
+            groundDirty = true;
         }
 
         function snowShake(strength) {
@@ -1207,11 +1209,12 @@
             const knock = Math.min(0.7, 0.12 + strength * 4);    // bigger change = harder shake
             const rot = treeGroup.rotation.y, cs = Math.cos(rot), sn = Math.sin(rot);
             const p = [0, 0, 0];
-            for (let k = stuck.length - 1; k >= 0; k--) {
+            let keep = 0;
+            for (let k = 0; k < stuck.length; k++) {
                 const s = stuck[k];
                 const gone = !glyphVisible(s.g, stageTarget);
-                if (!gone && Math.random() > knock) continue;
-                stuck.splice(k, 1);
+                if (!gone && Math.random() > knock) { stuck[keep++] = s; continue; }   // stays on the tree
+                stuckDirty = true;
                 if (debris.length >= SNOW.debrisMax) continue;
                 glyphPos(s.g, p);
                 const lx = p[0] + s.ox, ly = p[1] + s.oy, lz = p[2] + s.oz;
@@ -1221,6 +1224,7 @@
                 const out = 0.4 + Math.random() * 1.2;
                 debris.push({ x: wx, y: wy, z: wz, vx: (wx / rr) * out + (Math.random() - 0.5) * 0.4, vy: 0.6 + Math.random() * 1.2, vz: (wz / rr) * out + (Math.random() - 0.5) * 0.4 });
             }
+            stuck.length = keep;
         }
 
         function updateSnow(dt) {
@@ -1256,6 +1260,7 @@
                             });
                         }
                         top.y += 0.012 * SNOW.build;   // snow piles up a little
+                        stuckDirty = true;
                         respawnFlake(i, false);
                         continue;
                     }
@@ -1267,31 +1272,40 @@
             }
             fallPts.geometry.attributes.position.needsUpdate = true;
 
-            // 2) snow on the tree follows its letters
-            const p = [0, 0, 0];
-            for (let k = 0; k < stuck.length; k++) {
-                const s = stuck[k];
-                glyphPos(s.g, p);
-                stuckPos[k * 3] = p[0] + s.ox; stuckPos[k * 3 + 1] = p[1] + s.oy; stuckPos[k * 3 + 2] = p[2] + s.oz;
+            // 2) snow on the tree follows its letters. It's in the tree's own coordinates, so the tree's
+            //    rotation moves it for free; positions only need recomputing when the tree grows/shrinks
+            //    or snow is added/removed (not every frame).
+            if (stuckDirty || stageNow !== lastStuckStage) {
+                const p = [0, 0, 0];
+                for (let k = 0; k < stuck.length; k++) {
+                    const s = stuck[k];
+                    glyphPos(s.g, p);
+                    stuckPos[k * 3] = p[0] + s.ox; stuckPos[k * 3 + 1] = p[1] + s.oy; stuckPos[k * 3 + 2] = p[2] + s.oz;
+                }
+                stuckPts.geometry.setDrawRange(0, stuck.length);
+                stuckPts.geometry.attributes.position.needsUpdate = true;
+                stuckDirty = false; lastStuckStage = stageNow;
             }
-            stuckPts.geometry.setDrawRange(0, stuck.length);
-            stuckPts.geometry.attributes.position.needsUpdate = true;
 
             // 3) shaken-off clumps: gravity, then they settle on the ground
             for (let k = debris.length - 1; k >= 0; k--) {
                 const d = debris[k];
                 d.vy -= 7 * dt; d.vx *= 0.99; d.vz *= 0.99;
                 d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
-                if (d.y <= groundY) { addGround(d.x, d.z); debris.splice(k, 1); }
+                if (d.y <= groundY) { addGround(d.x, d.z); debris[k] = debris[debris.length - 1]; debris.pop(); }
             }
             for (let k = 0; k < debris.length; k++) {
                 debrisPos[k * 3] = debris[k].x; debrisPos[k * 3 + 1] = debris[k].y; debrisPos[k * 3 + 2] = debris[k].z;
             }
-            debrisPts.geometry.setDrawRange(0, debris.length);
-            debrisPts.geometry.attributes.position.needsUpdate = true;
-
-            groundPts.geometry.setDrawRange(0, groundN);
-            groundPts.geometry.attributes.position.needsUpdate = true;
+            if (debris.length || debrisPts.geometry.drawRange.count) {
+                debrisPts.geometry.setDrawRange(0, debris.length);
+                debrisPts.geometry.attributes.position.needsUpdate = true;
+            }
+            if (groundDirty) {
+                groundPts.geometry.setDrawRange(0, groundN);
+                groundPts.geometry.attributes.position.needsUpdate = true;
+                groundDirty = false;
+            }
         }
 
         init(); // run after all declarations above
