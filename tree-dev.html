@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="robots" content="noindex, nofollow">   <!-- development copy of tree.html -->
+    <meta name="description" content="Grow a Christmas tree from your own words, then share it with someone special. Every letter you type helps it grow. English and 한글. By Ramsol Jeong (정우람솔, wooramsol).">
+    <link rel="canonical" href="https://wooramsol.com/tree.html">
+    <link rel="icon" href="favicon.png" type="image/png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Ramsol's Repository">
+    <meta property="og:url" content="https://wooramsol.com/tree.html">
+    <meta property="og:title" content="Grow Your Tree — Ramsol Jeong (정우람솔)">
+    <meta property="og:description" content="Grow a Christmas tree from your own words, then share it with someone special. Every letter you type helps it grow. English and 한글. By Ramsol Jeong (정우람솔, wooramsol).">
+    <meta property="og:image" content="https://wooramsol.com/og.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>[DEV] Grow Your Tree</title>
+    <style>
+        body {
+            margin: 0;
+            background: #010301;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            touch-action: none; 
+        }
+        html, body { height: 100%; }
+        body { position: fixed; inset: 0; } /* keep iOS from scrolling the page when the keyboard opens */
+        canvas {
+            display: block;
+            position: fixed;
+            left: 0;
+            outline: none;
+        }
+        #tree-text-wrap {
+            position: fixed;
+            left: 50%;
+            top: max(16px, env(safe-area-inset-top));   /* text field on top, tree right below it */
+            transform: translateX(-50%);
+            z-index: 10;
+            width: min(420px, calc(100vw - 24px));   /* tighter side margins */
+        }
+        .tree-row { display: flex; gap: 8px; align-items: stretch; }
+        /* the box (border, background, height) stays the same size; only the text inside shrinks */
+        .field-box {
+            flex: 1; min-width: 0; position: relative;
+            height: 44px; padding: 0 8px; box-sizing: border-box;
+            display: flex; align-items: center; overflow: hidden;
+            background: #010301; border: 1px solid #0f400f; border-radius: 6px;
+            contain: layout paint style;
+        }
+        .field-box:focus-within { border-color: #aaffaa; }
+        /* blinking caret shown while the field isn't focused: a hint that you can type here
+           (phones don't allow a page to focus a field / open the keyboard by itself) */
+        .fake-caret {
+            position: absolute; top: 50%; left: 50%;
+            width: 2px; height: 20px; margin-top: -10px;
+            background: #aaffaa; pointer-events: none;
+            animation: caretBlink 1.06s steps(1) infinite;
+        }
+        .field-box:focus-within .fake-caret { display: none; }
+        @keyframes caretBlink { 50% { opacity: 0; } }
+        #copy-link {
+            flex: none;
+            padding: 0 14px;
+            font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa;
+            background: #010301;
+            border: 1px solid #0f400f;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #copy-link:active { border-color: #aaffaa; }
+        #copy-link.done { border-color: #aaffaa; }
+        /* guide line under the field: a shared link usually arrives with a message already typed,
+           so the hint lives here (always visible) instead of as a placeholder */
+        #type-guide {
+            margin-top: 10px;
+            text-align: center;
+            font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa;
+            animation: guideBlink 1.4s ease-in-out infinite;
+        }
+        @keyframes guideBlink { 50% { opacity: .2; } }
+        .tree-credit {
+            margin-top: 4px;
+            text-align: center;
+            font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #3f7f3f;
+        }
+        .tree-credit a { color: #6fbf6f; text-decoration: none; }
+        .tree-credit a:hover { text-decoration: underline; }
+        #copy-toast {
+            position: absolute; left: 0; right: 0; top: 100%;
+            margin-top: 6px; text-align: center;
+            font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa; opacity: 0; transition: opacity .2s; pointer-events: none;
+        }
+        #copy-toast.show { opacity: 1; }
+        #tree-count {
+            position: fixed; left: 12px; bottom: max(14px, env(safe-area-inset-bottom));
+            z-index: 10; pointer-events: none;
+            font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #3f7f3f; line-height: 1.5;
+            opacity: 0; transition: opacity .6s;
+        }
+        #tree-count.ready { opacity: 1; }
+        #tree-count b { color: #6fbf6f; font-weight: 600; }
+        #controls-hint {
+            position: fixed; right: 12px; bottom: max(14px, env(safe-area-inset-bottom));
+            z-index: 10; pointer-events: none;
+            text-align: right; line-height: 1.5;
+            font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #3f7f3f;
+            transition: opacity .6s;
+        }
+        #controls-hint b { color: #6fbf6f; font-weight: 600; }
+        #controls-hint.used { opacity: .45; }   /* fades back once you've tried it */
+        #tap-hint {
+            position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            z-index: 10; pointer-events: none;   /* taps go straight through to the page */
+            padding: 7px 14px; border-radius: 999px;
+            font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: #aaffaa; background: rgba(1, 3, 1, 0.7); border: 1px solid #0f400f;
+            opacity: 0; transition: opacity .4s;
+        }
+        #tap-hint.show { opacity: 1; animation: hintPulse 1.8s ease-in-out infinite; }
+        @keyframes hintPulse { 50% { opacity: .45; } }
+        #tree-text {
+            width: 100%;
+            flex: none;
+            box-sizing: border-box;
+            padding: 0;
+            height: 100%;
+            font-size: 16px; /* 16px+ stops iOS from zooming on focus */
+            /* proportional UI font: a monospace font made every space as wide as a letter */
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+            text-align: center;
+            display: block;
+            transform-origin: 50% 50%;  /* long text is shrunk with a transform to fit (see fitFieldText) */
+            color: #aaffaa;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #tree-text::placeholder { color: #3f7f3f; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="tap-hint">tap to play ♪</div>
+    <div style="position:fixed;left:8px;top:8px;z-index:30;font:700 10px monospace;color:#010301;background:#ffcc00;padding:2px 6px;border-radius:3px;pointer-events:none">DEV</div>
+    <div id="controls-hint" aria-hidden="true"></div>
+    <div id="tree-count">Trees made so far<br><b id="tree-count-n">–</b></div>
+    <div id="tree-text-wrap">
+        <div class="tree-row">
+            <div class="field-box"><input id="tree-text" type="text" placeholder="" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Letters for the tree"><span class="fake-caret" aria-hidden="true"></span></div>
+            <button id="copy-link" type="button" aria-label="Copy a link to this tree" title="Copy a link to this tree">Share</button>
+        </div>
+        <div id="type-guide">Type letters to grow your tree</div>
+        <div class="tree-credit" style="position:relative">Created by <a href="https://www.instagram.com/wooramsol" target="_blank" rel="noopener">@wooramsol</a> · <a href="https://wooramsol.com/" target="_blank" rel="noopener">wooramsol.com</a><div id="copy-toast">Link copied — share your tree!</div></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let scene, camera, renderer, treeGroup, starGroup, controls;
+
+        // Every tree grows from a random seed. The seed goes into the shared link (&seed=), so whoever
+        // opens the link sees exactly the same tree and message.
+        const TREE_SEED = (() => {
+            // (bug fix: a missing seed used to be read as the word "null", giving every tree the same seed;
+            //  links that already contain seed=null keep working and still show their tree)
+            const q = new URLSearchParams(location.search).get('seed');
+            const n = q ? parseInt(q, 36) : NaN;
+            return Number.isFinite(n) && n > 0 ? n : 1 + Math.floor(Math.random() * 2147483646);
+        })();
+        const rand = (() => {                       // mulberry32
+            let a = TREE_SEED >>> 0;
+            return () => {
+                a = (a + 0x6D2B79F5) | 0;
+                let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        })();
+        let starMeshes = [];
+        const glyphTextures = {};
+
+        // Length limit by width: wide letters (한글, CJK, emoji) count 2, everything else 1.
+        // 40 units = 20 한글 = 40 English letters, about what fits nicely in the field.
+        const MAX_UNITS = 40;
+        const charUnits = (ch) => (/[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]|[\u{1f000}-\u{1faff}]/u.test(ch) ? 2 : 1);
+        function limitUnits(text) {
+            let u = 0, out = '';
+            for (const ch of Array.from(text || '')) {
+                if (ch.codePointAt(0) < 0x20 || ch === '\u007f') continue;   // no invisible control characters
+                u += charUnits(ch);
+                if (u > MAX_UNITS) break;
+                out += ch;
+            }
+            return out;
+        }
+        const IS_PHONE = Math.min(window.innerWidth, window.innerHeight) < 600;
+        const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, IS_PHONE ? 1.5 : 2); // phones: fewer pixels to fill
+
+        const BG_COLOR = new THREE.Color(0x010301);
+        const COLOR_BOTTOM = new THREE.Color(0x0f400f);
+        const COLOR_TOP = new THREE.Color(0xaaffaa);
+        const STAR_COLOR_YELLOW = new THREE.Color(0xffff00);
+        const STAR_COLOR_WHITE = new THREE.Color(0xffffff);
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x010301, 0.035);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0.5, 14);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(PIXEL_RATIO);
+            renderer.setClearColor(BG_COLOR, 1);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = true;
+            controls.screenSpacePanning = true;
+            controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY };
+            controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+            controls.minDistance = 5;
+            controls.maxDistance = 30;
+
+            treeGroup = new THREE.Group();
+            treeGroup.position.y = 0.8;
+            scene.add(treeGroup);
+
+            growTree();
+            measureGrownTree();
+            setTreeText(initialText());
+            createOptimizedStar();
+            setupInput();
+            onResize();
+            animate();
+
+            window.addEventListener('resize', scheduleResize);
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', scheduleResize);
+            }
+        }
+
+        // ---- Letters are drawn onto small canvases with the device's own fonts, so any
+        //      language works (English, 한글, even emoji). Each distinct letter = one draw call.
+        function glyphTexture(char) {
+            if (glyphTextures[char]) return glyphTextures[char];
+            const S = 128;
+            const c = document.createElement('canvas');
+            c.width = c.height = S;
+            const g = c.getContext('2d');
+            g.fillStyle = '#fff';
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.font = `bold ${S * 0.82}px "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+            if (char === '.') {
+                // a bare period sits on the baseline and is tiny; draw it as a centred dot instead
+                g.beginPath(); g.arc(S / 2, S / 2, S * 0.11, 0, Math.PI * 2); g.fill();
+            } else {
+                g.fillText(char, S / 2, S / 2 + S * 0.04);
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.minFilter = THREE.LinearMipMapLinearFilter;
+            tex.anisotropy = 4;
+            glyphTextures[char] = tex;
+            return tex;
+        }
+
+        const glyphMaterials = {};
+        function glyphMaterial(char) {
+            return glyphMaterials[char] || (glyphMaterials[char] =
+                new THREE.MeshBasicMaterial({ map: glyphTexture(char), color: 0xffffff, alphaTest: 0.35, side: THREE.DoubleSide }));
+        }
+
+        const planeGeo = new THREE.PlaneGeometry(1, 1);
+        const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+        const UP = new THREE.Vector3(0, 1, 0);
+
+        function buildInstanced(parent, items) {
+            // items: [{char, x, y, z, rotY, size, color}] -> one InstancedMesh per distinct char
+            const byChar = new Map();
+            items.forEach((it) => { if (!byChar.has(it.char)) byChar.set(it.char, []); byChar.get(it.char).push(it); });
+            const meshes = [];
+            byChar.forEach((list, char) => {
+                const mat = glyphMaterial(char);
+                const mesh = new THREE.InstancedMesh(planeGeo, mat, list.length);
+                list.forEach((it, i) => {
+                    _p.set(it.x, it.y, it.z);
+                    _q.setFromAxisAngle(UP, it.rotY || 0);
+                    _s.set(it.size, it.size, it.size);
+                    _m.compose(_p, _q, _s);
+                    mesh.setMatrixAt(i, _m);
+                    mesh.setColorAt(i, it.color);
+                });
+                mesh.instanceMatrix.needsUpdate = true;
+                mesh.instanceColor.needsUpdate = true;
+                mesh.userData.items = list;
+                parent.add(mesh);
+                meshes.push(mesh);
+            });
+            return meshes;
+        }
+
+        function disposeMeshes(list) {
+            // materials/textures are cached per letter and reused; only the instance buffers are freed
+            list.forEach((m) => { m.parent && m.parent.remove(m); m.dispose && m.dispose(); });
+        }
+
+        // Positions and colors are generated once; typing only swaps which letter each spot shows.
+        // ================= Growing the tree: Space Colonization =================
+        // (Runions, Lane & Prusinkiewicz, "Modeling Trees with a Space Colonization Algorithm", 2007)
+        // A cloud of "attraction points" fills a conifer-shaped volume. Starting from a trunk at the
+        // ground, branch tips grow one small step at a time toward the nearby points they can "see";
+        // points that are reached are removed. The full growth is simulated once per visit (so every
+        // visitor gets a different tree) and each node remembers the step it appeared in.
+        // Typing more letters shows later growth steps: more branches, longer tips, a fuller crown.
+        // Branch thickness follows the pipe model (da Vinci / Murray's rule): a branch is as thick as all
+        // the twigs it carries, so the trunk and big limbs visibly thicken as the tree grows.
+        const TREE_H = 8.5, TREE_R = 4.2;         // envelope of the fully grown tree
+        const GROUND = -TREE_H / 2;
+        const STEP = 0.22, INFLUENCE = 2.2, KILL = 0.4, MAX_ITER = 160;
+        let nodes = [];                            // {x,y,z,parent,birth}
+        let maxBirth = 1;
+        let treeTopTarget = 0;
+
+        function hash01(a, b) {                    // deterministic 0..1 noise, so glyphs keep their spots
+            let t = Math.imul(a | 0, 374761393) ^ Math.imul((b | 0) + 1, 668265263);
+            t = Math.imul(t ^ (t >>> 13), 1274126177);
+            t ^= t >>> 16;
+            return (t >>> 0) / 4294967296;
+        }
+
+        function envelopeRadius(y) {               // conifer outline, slightly bell-shaped
+            const h = (y - GROUND) / TREE_H;
+            return h < 0 || h > 1 ? 0 : TREE_R * Math.pow(1 - h, 1.05); // pointed top, broad base
+        }
+
+        function growTree() {
+            // 1. attraction points inside the crown (bottom 13% stays bare trunk)
+            const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
+            const A = isMobile ? 1100 : 1500;
+            const pts = [];
+            while (pts.length < A) {
+                const y = GROUND + TREE_H * (0.13 + 0.87 * rand());
+                const R = envelopeRadius(y);
+                const x = (rand() * 2 - 1) * TREE_R, z = (rand() * 2 - 1) * TREE_R;
+                if (x * x + z * z <= R * R) pts.push({ x, y, z, alive: true });
+            }
+
+            // 2. trunk: grow straight up until the crown is within reach
+            nodes = [{ x: 0, y: GROUND, z: 0, parent: -1, birth: 0 }];
+            const near = (n) => pts.some((p) => (p.x - n.x) ** 2 + (p.y - n.y) ** 2 + (p.z - n.z) ** 2 < INFLUENCE * INFLUENCE);
+            while (!near(nodes[nodes.length - 1]) && nodes.length < 200) {
+                const last = nodes[nodes.length - 1];
+                nodes.push({ x: 0, y: last.y + STEP, z: 0, parent: nodes.length - 1, birth: 0 });
+            }
+
+            // spatial grid so each point only checks nearby nodes
+            const CELL = INFLUENCE;
+            const grid = new Map();
+            const key = (x, y, z) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)},${Math.floor(z / CELL)}`;
+            const addToGrid = (i) => {
+                const n = nodes[i], k = key(n.x, n.y, n.z);
+                if (!grid.has(k)) grid.set(k, []);
+                grid.get(k).push(i);
+            };
+            nodes.forEach((_, i) => addToGrid(i));
+
+            // 3. grow
+            for (let it = 1; it <= MAX_ITER; it++) {
+                const pull = new Map();                 // node index -> summed direction
+                let alive = 0;
+                for (const p of pts) {
+                    if (!p.alive) continue;
+                    alive++;
+                    const cx = Math.floor(p.x / CELL), cy = Math.floor(p.y / CELL), cz = Math.floor(p.z / CELL);
+                    let best = -1, bestD = INFLUENCE * INFLUENCE;
+                    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+                        const list = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
+                        if (!list) continue;
+                        for (const i of list) {
+                            const n = nodes[i];
+                            const d = (p.x - n.x) ** 2 + (p.y - n.y) ** 2 + (p.z - n.z) ** 2;
+                            if (d < bestD) { bestD = d; best = i; }
+                        }
+                    }
+                    if (best < 0) continue;
+                    if (bestD < KILL * KILL) { p.alive = false; continue; }
+                    const n = nodes[best], d = Math.sqrt(bestD);
+                    const v = pull.get(best) || { x: 0, y: 0, z: 0 };
+                    v.x += (p.x - n.x) / d; v.y += (p.y - n.y) / d; v.z += (p.z - n.z) / d;
+                    pull.set(best, v);
+                }
+                if (!alive || !pull.size) break;
+                let grew = 0;
+                pull.forEach((v, i) => {
+                    v.y += 0.55;                        // upward tropism, like a conifer
+                    const len = Math.hypot(v.x, v.y, v.z) || 1;
+                    const n = nodes[i];
+                    const nx = n.x + (v.x / len) * STEP, ny = n.y + (v.y / len) * STEP, nz = n.z + (v.z / len) * STEP;
+                    // skip if this node already grew almost the same child (avoids stuck tips)
+                    if (nodes.some((m, j) => m.parent === i && (m.x - nx) ** 2 + (m.y - ny) ** 2 + (m.z - nz) ** 2 < 0.0025)) return;
+                    nodes.push({ x: nx, y: ny, z: nz, parent: i, birth: it });
+                    addToGrid(nodes.length - 1);
+                    grew++;
+                });
+                if (!grew) break;
+                maxBirth = it;
+            }
+        }
+
+        // colour by height (dark green at the bottom, light at the top); thick wood a bit darker
+        const _hsl = {};
+        function colorAt(out, y, wood, n1, n2, n3) {
+            const h = THREE.MathUtils.clamp((y - GROUND) / TREE_H, 0, 1);
+            const alpha = 0.2 + THREE.MathUtils.smoothstep(h, 0.0, 0.15) * 0.8;
+            out.copy(COLOR_BOTTOM).lerp(COLOR_TOP, h).lerp(BG_COLOR, 1.0 - alpha);
+            out.getHSL(_hsl);
+            out.setHSL(_hsl.h + (n1 - 0.5) * 0.08, _hsl.s + (n2 - 0.5) * 0.5, _hsl.l + 0.1 + (n3 - 0.5) * 0.6 * alpha);
+            out.lerp(BG_COLOR, 1.0 - alpha);
+            if (wood > 0) out.lerp(BG_COLOR, Math.min(0.45, wood));
+        }
+
+        function textToChars(text) {
+            return Array.from(limitUnits(text || '').replace(/\s+/g, ''));
+        }
+
+        // ================= GPU-driven growth =================
+        // Everything the tree can ever show is built ONCE at load: every letter of every growth stage,
+        // with the stage it appears in (and, for needles, the stage it falls off). Typing then only
+        // changes a few numbers sent to the GPU (the growth stage, how many letters there are) and redraws
+        // a tiny texture with the typed letters. No geometry is rebuilt and nothing big is uploaded while
+        // typing, so the animation keeps running smoothly even on phones. The stage also animates, so the
+        // tree visibly grows / shrinks instead of jumping.
+        const GLYPH_BUDGET = IS_PHONE ? 11000 : 17000;
+        const ATLAS_CELL = 128, ATLAS_COLS = 8, ATLAS_ROWS = 4;          // 32 letter slots, each drawn once
+        let treeMesh = null, treeMat = null, atlasTex = null, atlasCtx = null;
+        let stageTarget = 0, stageNow = 0;
+        let GLY = null;   // CPU copy of every letter's growth data (used by the snow)
+        let leaderFromAt = [], leaderToAt = [];
+
+        function buildGrowth() {
+            const N = nodes.length, S = maxBirth;
+            const radiusOf = (cnt) => Math.min(0.5, 0.02 * Math.pow(cnt, 0.42));
+
+            // replay growth stage by stage: twigs carried per branch (pipe model), radius per stage
+            const cnt = new Float32Array(N);
+            const rAt = new Float32Array(N * (S + 1));
+            const tipEnd = new Float32Array(N).fill(1e6);   // stage when a tip stops being a tip
+            const byBirth = Array.from({ length: S + 1 }, () => []);
+            nodes.forEach((n, i) => { if (i > 0) byBirth[n.birth].push(i); });
+            let top = GROUND, allTop = GROUND;
+            for (let st = 0; st <= S; st++) {
+                for (const i of byBirth[st]) {
+                    for (let j = i; j > 0; j = nodes[j].parent) cnt[j] += 1;
+                    const n = nodes[i];
+                    if (n.y > top && Math.abs(n.x) < 0.6 && Math.abs(n.z) < 0.6) top = n.y;
+                    if (n.y > allTop) allTop = n.y;
+                }
+                for (let i = 1; i < N; i++) {
+                    if (nodes[i].birth > st) continue;
+                    rAt[i * (S + 1) + st] = radiusOf(cnt[i]);
+                    if (cnt[i] > 3 && tipEnd[i] > st) tipEnd[i] = st;
+                }
+                leaderFromAt[st] = Math.min(top, allTop - 1.2);
+                leaderToAt[st] = allTop + 0.35;
+            }
+
+            // letters per branch segment: more on thick wood; scaled so the grown tree fits the budget
+            const want = (r) => 2.5 + r * 45;
+            let finalTotal = 0;
+            for (let i = 1; i < N; i++) finalTotal += want(rAt[i * (S + 1) + S]);
+            const scale = Math.min(1, GLYPH_BUDGET / finalTotal);
+            const kAt = (i, st) => Math.max(1, Math.round(want(rAt[i * (S + 1) + st]) * scale));
+
+            const A = { base: [], dir: [], rA: [], rF: [], appear: [], vanish: [], rot: [], size: [], pick: [], color: [], leader: [] };
+            const col = new THREE.Color();
+            const push = (bx, by, bz, dx, dy, dz, rA, rF, appear, vanish, rot, size, pick, leader, cy, wood, h1, h2, h3) => {
+                A.base.push(bx, by, bz); A.dir.push(dx, dy, dz);
+                A.rA.push(rA); A.rF.push(rF); A.appear.push(appear); A.vanish.push(vanish);
+                A.rot.push(rot); A.size.push(size); A.pick.push(pick); A.leader.push(leader);
+                colorAt(col, cy, wood, h1, h2, h3);
+                A.color.push(col.r, col.g, col.b);
+            };
+
+            for (let i = 1; i < N; i++) {
+                const n = nodes[i], p = nodes[n.parent], b = n.birth;
+                const sx = n.x - p.x, sy = n.y - p.y, sz = n.z - p.z;
+                const sl = Math.hypot(sx, sy, sz) || 1;
+                const perp = (j) => {            // random unit direction around the branch
+                    let ox = hash01(i, j * 7 + 2) * 2 - 1, oy = hash01(i, j * 7 + 3) * 2 - 1, oz = hash01(i, j * 7 + 4) * 2 - 1;
+                    const dot = (ox * sx + oy * sy + oz * sz) / sl;
+                    ox -= dot * sx / sl; oy -= dot * sy / sl; oz -= dot * sz / sl;
+                    const ol = Math.hypot(ox, oy, oz) || 1;
+                    return [ox / ol, oy / ol, oz / ol];
+                };
+                // wood: the j-th letter on this segment appears once the branch is thick enough to carry it
+                const kF = kAt(i, S);
+                const rF = rAt[i * (S + 1) + S];
+                for (let j = 0; j < kF; j++) {
+                    let ap = b;
+                    while (ap < S && kAt(i, ap) <= j) ap++;
+                    const u = hash01(i, j * 7 + 1);
+                    const [dx, dy, dz] = perp(j);
+                    const m = Math.sqrt(hash01(i, j * 7 + 5));
+                    const by = p.y + sy * u;
+                    push(p.x + sx * u, by, p.z + sz * u, dx * m, dy * m, dz * m,
+                        rAt[i * (S + 1) + ap], rF, ap, 1e6,
+                        hash01(i + 5, j) * Math.PI * 2, 0.15 + hash01(i + 9, j) * 0.04, hash01(i + 3, j * 5), -1,
+                        by, rF * 1.6, hash01(i, j * 7 + 6), hash01(i + 7, j), hash01(i + 13, j));
+                }
+                // needles around young tips; they drop off once the tip has grown into a branch
+                for (let j = 0; j < 6; j++) {
+                    const jj = 100 + j;
+                    const u = hash01(i, jj * 7 + 1);
+                    const [dx, dy, dz] = perp(jj);
+                    const m = 0.3 * Math.sqrt(hash01(i, jj * 7 + 5));
+                    const by = p.y + sy * u - 0.06;
+                    push(p.x + sx * u, by, p.z + sz * u, dx * m, dy * m, dz * m, 1, 1, b, tipEnd[i],
+                        hash01(i + 5, jj) * Math.PI * 2, 0.15 + hash01(i + 9, jj) * 0.04, hash01(i + 3, jj * 5), -1,
+                        by, 0, hash01(i, jj * 7 + 6), hash01(i + 7, jj), hash01(i + 13, jj));
+                }
+            }
+            // leader: slim central shoot from the crown into the star; follows the growth via uniforms.
+            // Sparse, slightly dimmed like the other branches, and gently bent at random (it still meets
+            // the star at the top and the crown at the bottom).
+            const LEADER = 55;
+            const bendA = 0.12 + rand() * 0.18, bendDir = rand() * Math.PI * 2;
+            const wigA = 0.04 + rand() * 0.05, wigPh = rand() * Math.PI * 2;
+            for (let j = 0; j < LEADER; j++) {
+                const u = j / (LEADER - 1);
+                const bend = bendA * Math.sin(Math.PI * u);
+                const wig = wigA * Math.sin(2 * Math.PI * u + wigPh) * Math.sin(Math.PI * u);
+                const bx = Math.cos(bendDir) * bend - Math.sin(bendDir) * wig;
+                const bz = Math.sin(bendDir) * bend + Math.cos(bendDir) * wig;
+                const a = hash01(900001, j) * Math.PI * 2;
+                const needle = j % 3 === 0;
+                const d = needle ? 0.12 + 0.12 * (1 - u) : (0.07 * (1 - u) + 0.01) * Math.sqrt(hash01(900002, j));
+                // appears progressively: about a third of it on a sapling, all of it on the grown tree
+                const rank = hash01(900010, j);
+                const young = 0.38 * S, span = 0.62 * S;
+                const appear = rank < 0.35 ? 0 : young + span * (rank - 0.35) / 0.65;
+                push(bx, needle ? -0.05 : 0, bz, Math.cos(a), 0, Math.sin(a), d * 0.45, d, appear, 1e6,
+                    hash01(900007, j) * Math.PI * 2, 0.14 + hash01(900008, j) * 0.03, hash01(900006, j), u,
+                    leaderToAt[S] - 1.6 + u, 0.15 + 0.3 * hash01(900009, j), hash01(900003, j), hash01(900004, j), hash01(900005, j));
+            }
+
+            // one instanced mesh for the whole tree, one draw call
+            const geo = new THREE.InstancedBufferGeometry();
+            const plane = new THREE.PlaneGeometry(1, 1);
+            geo.index = plane.index;
+            geo.setAttribute('position', plane.getAttribute('position'));
+            geo.setAttribute('uv', plane.getAttribute('uv'));
+            const at = (arr, n) => new THREE.InstancedBufferAttribute(new Float32Array(arr), n);
+            geo.setAttribute('aBase', at(A.base, 3));
+            geo.setAttribute('aDir', at(A.dir, 3));
+            geo.setAttribute('aRA', at(A.rA, 1));
+            geo.setAttribute('aRF', at(A.rF, 1));
+            geo.setAttribute('aAppear', at(A.appear, 1));
+            geo.setAttribute('aVanish', at(A.vanish, 1));
+            geo.setAttribute('aRot', at(A.rot, 1));
+            geo.setAttribute('aSize', at(A.size, 1));
+            geo.setAttribute('aPick', at(A.pick, 1));
+            geo.setAttribute('aLeader', at(A.leader, 1));
+            geo.setAttribute('aColor', at(A.color, 3));
+            geo.instanceCount = A.rot.length;
+            GLY = {
+                n: A.rot.length, S,
+                base: Float32Array.from(A.base), dir: Float32Array.from(A.dir),
+                rA: Float32Array.from(A.rA), rF: Float32Array.from(A.rF),
+                ap: Float32Array.from(A.appear), van: Float32Array.from(A.vanish), leader: Float32Array.from(A.leader),
+            };
+
+            // letter atlas: redrawn (small) whenever the typed letters change
+            const canvas = document.createElement('canvas');
+            canvas.width = ATLAS_CELL * ATLAS_COLS;
+            canvas.height = ATLAS_CELL * ATLAS_ROWS;
+            atlasCtx = canvas.getContext('2d');
+            atlasTex = new THREE.CanvasTexture(canvas);
+            atlasTex.minFilter = THREE.LinearMipMapLinearFilter;
+            atlasTex.anisotropy = 4;
+
+            treeMat = new THREE.ShaderMaterial({
+                fog: true,
+                side: THREE.DoubleSide,
+                uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+                    uAtlas: { value: null }, uStage: { value: 0 }, uMaxStage: { value: S },
+                    uCount: { value: 1 }, uLeaderFrom: { value: 0 }, uLeaderTo: { value: 1 },
+                    uSlots: { value: new Array(32).fill(0) },
+                }]),
+                vertexShader: `
+                    attribute vec3 aBase; attribute vec3 aDir; attribute vec3 aColor;
+                    attribute float aRA; attribute float aRF; attribute float aAppear; attribute float aVanish;
+                    attribute float aRot; attribute float aSize; attribute float aPick; attribute float aLeader;
+                    uniform float uStage; uniform float uMaxStage; uniform float uCount;
+                    uniform float uLeaderFrom; uniform float uLeaderTo; uniform float uSlots[32];
+                    varying vec2 vUv; varying vec3 vColor;
+                    #include <fog_pars_vertex>
+                    void main() {
+                        float vis = smoothstep(aAppear - 0.01, aAppear + 1.0, uStage) * (1.0 - smoothstep(aVanish, aVanish + 1.0, uStage));
+                        vec3 center;
+                        if (aLeader >= 0.0) {
+                            // the leader grows with the tree: its bend, thickness and number of letters increase
+                            float tg = clamp(uStage / uMaxStage, 0.0, 1.0);
+                            float bendK = 0.25 + 0.75 * tg;
+                            center = vec3(aBase.x * bendK, mix(uLeaderFrom, uLeaderTo, aLeader) + aBase.y, aBase.z * bendK)
+                                   + aDir * mix(aRA, aRF, tg);
+                        } else {
+                            float t = clamp((uStage - aAppear) / max(1.0, uMaxStage - aAppear), 0.0, 1.0);
+                            center = aBase + aDir * mix(aRA, aRF, t);   // branch thickens as it grows
+                        }
+                        float s = aSize * vis;
+                        float c = cos(aRot), sn = sin(aRot);
+                        vec3 local = vec3(position.x * c, position.y, -position.x * sn) * s;
+                        vec4 mvPosition = modelViewMatrix * vec4(center + local, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+                        float cell = uSlots[int(min(floor(aPick * uCount), uCount - 1.0))];
+                        vec2 cellXY = vec2(mod(cell, ${ATLAS_COLS}.0), floor(cell / ${ATLAS_COLS}.0));
+                        vUv = (cellXY + vec2(uv.x, 1.0 - uv.y)) / vec2(${ATLAS_COLS}.0, ${ATLAS_ROWS}.0);
+                        vUv.y = 1.0 - vUv.y;
+                        vColor = aColor;
+                        #include <fog_vertex>
+                    }`,
+                fragmentShader: `
+                    uniform sampler2D uAtlas;
+                    varying vec2 vUv; varying vec3 vColor;
+                    #include <fog_pars_fragment>
+                    void main() {
+                        float a = texture2D(uAtlas, vUv).a;
+                        if (a < 0.35) discard;
+                        gl_FragColor = vec4(vColor, 1.0);
+                        #include <fog_fragment>
+                    }`,
+            });
+            treeMat.uniforms.uAtlas.value = atlasTex;
+            treeMesh = new THREE.Mesh(geo, treeMat);
+            treeMesh.frustumCulled = false;
+            treeGroup.add(treeMesh);
+        }
+
+        // Each distinct letter gets a slot in the atlas the first time it's typed and keeps it,
+        // so the texture is only re-uploaded when a never-seen letter appears (not on every keystroke).
+        const slotOf = new Map();
+        let slotClock = 0;
+        const slotUsed = [];
+        function slotFor(ch, keep) {
+            if (slotOf.has(ch)) { slotUsed[slotOf.get(ch)] = ++slotClock; return [slotOf.get(ch), false]; }
+            let slot = slotOf.size;
+            if (slot >= ATLAS_COLS * ATLAS_ROWS) {          // full: reuse the least recently used slot
+                let best = -1, bestT = Infinity;
+                slotOf.forEach((sl, c) => { if (!keep.has(c) && slotUsed[sl] < bestT) { bestT = slotUsed[sl]; best = sl; } });
+                slotOf.forEach((sl, c) => { if (sl === best) slotOf.delete(c); });
+                slot = best;
+            }
+            slotOf.set(ch, slot);
+            slotUsed[slot] = ++slotClock;
+            const g = atlasCtx, C = ATLAS_CELL;
+            const x0 = (slot % ATLAS_COLS) * C, y0 = Math.floor(slot / ATLAS_COLS) * C;
+            g.clearRect(x0, y0, C, C);
+            g.fillStyle = '#fff';
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.font = `bold ${C * 0.82}px "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+            if (ch === '.') { g.beginPath(); g.arc(x0 + C / 2, y0 + C / 2, C * 0.11, 0, Math.PI * 2); g.fill(); }
+            else g.fillText(ch, x0 + C / 2, y0 + C / 2 + C * 0.04);
+            return [slot, true];
+        }
+
+        function drawAtlas(glyphs) {
+            const keep = new Set(glyphs);
+            const slots = treeMat.uniforms.uSlots.value;
+            let changed = false;
+            glyphs.slice(0, 32).forEach((ch, i) => {
+                const [slot, drawn] = slotFor(ch, keep);
+                slots[i] = slot;
+                changed = changed || drawn;
+            });
+            if (changed) atlasTex.needsUpdate = true;
+        }
+
+        let lastGlyphKey = '';
+        function setTreeText(text) {
+            if (!treeMesh) buildGrowth();
+            const chars = textToChars(text);
+            const unique = [...new Set(chars)].slice(0, ATLAS_COLS * ATLAS_ROWS);   // letters to draw with
+            const glyphs = unique.length ? unique : ['.'];
+            const key = glyphs.join('\u0001');
+            if (key !== lastGlyphKey) { lastGlyphKey = key; drawAtlas(glyphs); }
+            treeMat.uniforms.uCount.value = glyphs.length;
+            // growth stage: nothing typed = a young sapling, 20 한글 / 40 English letters = fully grown
+            const units = chars.reduce((a, ch) => a + charUnits(ch), 0);
+            const c = Math.pow(Math.min(units, MAX_UNITS) / MAX_UNITS, 0.75);
+            const newTarget = (0.38 + 0.62 * c) * maxBirth;
+            if (stageNow && Math.abs(newTarget - stageTarget) > 1e-6) snowShake(Math.abs(newTarget - stageTarget) / maxBirth);
+            stageTarget = newTarget;
+            if (!stageNow) stageNow = stageTarget;
+            applyStage();
+        }
+
+        function applyStage() {
+            const S = maxBirth, s = Math.max(0, Math.min(S, stageNow));
+            const i0 = Math.floor(s), i1 = Math.min(S, i0 + 1), f = s - i0;
+            const from = leaderFromAt[i0] + (leaderFromAt[i1] - leaderFromAt[i0]) * f;
+            const to = leaderToAt[i0] + (leaderToAt[i1] - leaderToAt[i0]) * f;
+            treeMat.uniforms.uStage.value = s;
+            treeMat.uniforms.uLeaderFrom.value = from - 0;
+            treeMat.uniforms.uLeaderTo.value = to;
+            treeTopTarget = to;                        // the star's lowest point sits here
+        }
+
+        // Fit the fully grown tree (incl. star, above the text field) to the screen once;
+        // the camera stays put while the tree grows inside that frame.
+        let FIT_R = TREE_R, FIT_TOP = GROUND + TREE_H;
+        function measureGrownTree() {
+            const rs = nodes.map((n) => Math.hypot(n.x, n.z)).sort((a, b) => a - b);
+            FIT_R = (rs[Math.floor(rs.length * 0.99)] || TREE_R) + 0.4;
+            FIT_TOP = nodes.reduce((m, n) => Math.max(m, n.y), GROUND);
+        }
+
+        function fitCamera() {
+            const top = 0.8 + FIT_TOP + 0.35 + 1.2;   // leader + star above the tallest point (treeGroup is raised by 0.8)
+            const bottom = 0.8 + GROUND - 0.3;
+            const halfW = FIT_R * 1.08;               // a little extra for perspective
+            const reserve = 0.2;                      // the text field is above the canvas now
+            const halfH = (top - bottom + reserve) / 2;
+            const centerY = (top + bottom - reserve) / 2;
+            const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+            const dist = Math.max(halfH / tanHalf, halfW / (tanHalf * camera.aspect)) * 1.04;
+            // If the screen is tall (width is the limit), keep the tree right under the text field
+            // and leave the spare room at the bottom.
+            const visibleHalfH = dist * tanHalf;
+            const camY = Math.min(centerY, top + 0.15 - visibleHalfH);
+            controls.target.set(0, camY, 0);
+            camera.position.set(0, camY, dist);
+            controls.maxDistance = Math.max(30, dist * 1.5);
+            controls.update();
+        }
+
+        function createOptimizedStar() {
+            starGroup = new THREE.Group();
+            const centerY = 4.8, outerRadius = 0.65, innerRadius = 0.28, thicknessFactor = 0.15;
+            const vertices = [];
+            for (let i = 0; i < 10; i++) {
+                const angle = (Math.PI / 2) + (i * Math.PI / 5);
+                const r = (i % 2 === 0) ? outerRadius : innerRadius;
+                vertices.push({ x: Math.cos(angle) * r, y: centerY + Math.sin(angle) * r });
+            }
+            const items = [];
+            let attempts = 0;
+            while (items.length < 600 && attempts < 10000) {
+                attempts++;
+                const rx = (rand() - 0.5) * 2 * outerRadius;
+                const ry = centerY + (rand() - 0.5) * 2 * outerRadius;
+                if (!isPointInPolygon(rx, ry, vertices)) continue;
+                const distRatio = Math.sqrt(rx * rx + (ry - centerY) * (ry - centerY)) / outerRadius;
+                const rz = (rand() - 0.5) * 2 * (1.0 - distRatio) * thicknessFactor;
+                const size = (0.08 + (1.0 - distRatio) * 0.06 + rand() * 0.04) * 1.3;
+                const color = (rand() > 0.05) ? STAR_COLOR_YELLOW.clone() : STAR_COLOR_WHITE.clone();
+                const hsl = {};
+                color.getHSL(hsl);
+                // random facing so the flat glyphs never all turn edge-on together while the star spins
+                items.push({ char: '*', x: rx, y: ry, z: rz, rotY: rand() * Math.PI, size, color, hsl });
+            }
+            starMeshes = buildInstanced(starGroup, items);
+            treeGroup.add(starGroup);
+            starGroup.position.y = treeTopTarget + 0.5 - 4.8;
+        }
+
+        function isPointInPolygon(x, y, vs) {
+            let inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                const xi = vs[i].x, yi = vs[i].y, xj = vs[j].x, yj = vs[j].y;
+                if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+            }
+            return inside;
+        }
+
+        // ---- Text field: live rebuild while typing; the text is kept in the URL (?text=) so a tree can be shared.
+        // ---- Short links for non-English text.
+        // In a URL every 한글 letter becomes 9 characters (%EB%A9%94…). Instead the message is packed
+        // into bytes (English = 1 byte, 한글 syllable/jamo = 2 bytes) and written in URL-safe base64:
+        // about 2.7 characters per 한글 letter. Plain English keeps the readable ?text=… form.
+        const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+        function packText(text) {
+            const bytes = [];
+            for (const ch of Array.from(text)) {
+                const cp = ch.codePointAt(0);
+                if (cp < 0x80) bytes.push(cp);
+                else if (cp >= 0xAC00 && cp <= 0xD7A3) { const i = cp - 0xAC00; bytes.push(0x80 | (i >> 8), i & 0xFF); }          // 한글 syllable
+                else if (cp >= 0x3000 && cp <= 0x33FF) { const i = cp - 0x3000; bytes.push(0xAC | (i >> 8), i & 0xFF); }          // ㄱ ㅏ … and CJK symbols
+                else bytes.push(0xF0, (cp >> 16) & 0xFF, (cp >> 8) & 0xFF, cp & 0xFF);                                            // anything else
+            }
+            let out = '';
+            for (let i = 0; i < bytes.length; i += 3) {
+                const n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+                const k = Math.min(4, Math.ceil((bytes.length - i) * 4 / 3));
+                for (let j = 0; j < k; j++) out += B64[(n >> (18 - 6 * j)) & 63];
+            }
+            return out;
+        }
+        function unpackText(code) {
+            const bytes = [];
+            for (let i = 0; i < code.length; i += 4) {
+                const chunk = code.slice(i, i + 4);
+                let n = 0;
+                for (let j = 0; j < 4; j++) n = (n << 6) | Math.max(0, B64.indexOf(chunk[j] || 'A'));
+                const k = Math.floor(chunk.length * 3 / 4);
+                for (let j = 0; j < k; j++) bytes.push((n >> (16 - 8 * j)) & 0xFF);
+            }
+            // tolerant decoding: a damaged / hand-edited link just loses the broken letters
+            let out = '';
+            const put = (cp) => { if (cp >= 0x20 && cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF)) out += String.fromCodePoint(cp); };
+            for (let i = 0; i < bytes.length;) {
+                const b = bytes[i];
+                if (b < 0x80) { put(b); i += 1; }
+                else if (b < 0xAC) { if (i + 1 < bytes.length) { const k = ((b & 0x7F) << 8) | bytes[i + 1]; if (k <= 11171) put(0xAC00 + k); } i += 2; }
+                else if (b < 0xB0) { if (i + 1 < bytes.length) put(0x3000 + (((b - 0xAC) << 8) | bytes[i + 1])); i += 2; }
+                else if (b === 0xF0) { if (i + 3 < bytes.length) put((bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3]); i += 4; }
+                else i += 1;
+            }
+            return out;
+        }
+
+        function initialText() {
+            try {
+                const q = new URLSearchParams(location.search);
+                if (q.has('m')) return unpackText(q.get('m'));
+                return q.has('text') ? q.get('text') : '';   // first visit: empty field, a small tree of dots
+            } catch (e) { return ''; }
+        }
+
+        // Single-line field (a multi-line textarea made iPhones stutter on every key).
+        // So that nothing gets cut off, long text is shrunk to fit with a CSS transform: the font stays
+        // 16px (no iOS zoom) and no layout work happens on ordinary keystrokes.
+        const measureCtx = document.createElement('canvas').getContext('2d');
+        let fieldScale = 1;
+        // put the blinking hint caret right after the (centred) text (centre of the box when empty)
+        function placeCaret(input, w, sc) {
+            const caret = input.parentElement.querySelector('.fake-caret');
+            if (!caret) return;
+            const half = (w * sc) / 2;
+            let x = input.value ? half + 2 : -1;
+            const box = input.parentElement.clientWidth / 2 - 10;
+            x = Math.max(-box, Math.min(box, x));
+            caret.style.transform = `translateX(${x.toFixed(1)}px)`;
+        }
+
+        function fitFieldText(input) {
+            const cs = getComputedStyle(input);
+            measureCtx.font = `${cs.fontSize} ${cs.fontFamily}`;
+            const avail = input.parentElement.clientWidth - 16 - 4;             // minus padding, small safety
+            const w = measureCtx.measureText(input.value).width;
+            let sc = Math.min(1, avail / Math.max(1, w));
+            sc = Math.max(0.5, Math.floor(sc * 20) / 20);                      // steps of 5%, so it rarely changes
+            placeCaret(input, w, sc);
+            if (sc === fieldScale) return;
+            fieldScale = sc;
+            input.style.transform = sc < 1 ? `scale(${sc})` : '';
+            input.style.width = sc < 1 ? `${100 / sc}%` : '';
+            input.style.marginLeft = sc < 1 ? `${-(100 / sc - 100) / 2}%` : '';
+        }
+
+        function setupInput() {
+            const input = document.getElementById('tree-text');
+            input.maxLength = MAX_UNITS;   // hard cap; the real limit (by width) is applied below
+            input.value = limitUnits(initialText());
+            let timer = 0, urlTimer = 0;
+            const shareUrl = () => {
+                const url = new URL(location.href);
+                url.search = '';
+                url.hash = '';
+                const v = input.value.trim();
+                // plain English/numbers stay readable (?text=MERRY%20XMAS); anything else is packed short (?m=…)
+                if (/^[A-Za-z0-9 .,!?'-]*$/.test(v)) url.searchParams.set('text', v);
+                else url.searchParams.set('m', packText(v));
+                url.searchParams.set('seed', TREE_SEED.toString(36));
+                return url.toString();
+            };
+            const saveUrl = () => {
+                try {
+                    const v = input.value.trim();
+                    if (v === '' && !/[?&](seed|text|m)=/.test(location.search)) return; // keep a clean URL until something is typed
+                    history.replaceState(null, '', shareUrl());
+                } catch (e) {}
+            };
+            // copy-link button: the link recreates this exact message and tree
+            const copyBtn = document.getElementById('copy-link');
+            const toast = document.getElementById('copy-toast');
+            let toastTimer = 0;
+            const copied = (msg) => {
+                toast.textContent = msg;
+                toast.classList.add('show');
+                copyBtn.classList.add('done');
+                copyBtn.textContent = 'Copied';
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => { toast.classList.remove('show'); copyBtn.classList.remove('done'); copyBtn.textContent = 'Share'; }, 1800);
+            };
+            copyBtn.addEventListener('click', async () => {
+                const link = shareUrl();
+                try {
+                    await navigator.clipboard.writeText(link);
+                    copied('Link copied — share your tree!');
+                    logShare(input.value.trim());
+                } catch (e) {
+                    // older browsers: copy through a temporary text field
+                    const tmp = document.createElement('textarea');
+                    tmp.value = link;
+                    tmp.setAttribute('readonly', '');
+                    tmp.style.cssText = 'position:fixed;top:-100px;opacity:0';
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    let ok = false;
+                    try { ok = document.execCommand('copy'); } catch (e2) {}
+                    tmp.remove();
+                    copied(ok ? 'Link copied — share your tree!' : link);
+                    logShare(input.value.trim());
+                }
+            });
+            // keep the 3D controls from reacting to taps on the button / credit link
+            [copyBtn, document.querySelector('.tree-credit')].forEach((el) =>
+                ['pointerdown', 'touchstart'].forEach((e) => el.addEventListener(e, (ev) => ev.stopPropagation())));
+            const apply = () => {
+                setTreeText(input.value);
+                // Safari slows down / blocks frequent history.replaceState calls, so only save the
+                // text to the URL once typing has stopped for a moment.
+                clearTimeout(urlTimer); urlTimer = setTimeout(saveUrl, 1200);
+            };
+            // 'input' fires per keystroke; for Korean IME also on composition updates, so 한글 grows live too
+            // trim to the width limit, but never in the middle of composing a 한글 syllable
+            const enforce = () => {
+                const t = limitUnits(input.value);
+                if (t !== input.value) input.value = t;
+            };
+            input.addEventListener('compositionend', () => { enforce(); input.dispatchEvent(new Event('input')); });
+            input.addEventListener('input', (e) => {
+                if (!e.isComposing) enforce();
+                fitFieldText(input);
+                clearTimeout(timer); timer = setTimeout(apply, 50);
+            });
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+            fitFieldText(input);
+            // cursor at the end of the text (also when opening a shared link)
+            const toEnd = () => { const n = input.value.length; try { input.setSelectionRange(n, n); } catch (e) {} };
+            input.addEventListener('focus', () => setTimeout(toEnd, 0), { once: true }); // first time only; later taps place the cursor freely
+            // computers: focus the field right away so the real cursor blinks at the end.
+            // phones: a page can't open the keyboard by itself, so the fake blinking caret shows instead.
+            if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) {
+                setTimeout(() => { try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); } toEnd(); }, 300);
+            }
+            // keep the 3D controls from reacting while typing
+            ['pointerdown', 'touchstart', 'keydown'].forEach((e) => input.addEventListener(e, (ev) => ev.stopPropagation()));
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            // time-based, so a slow frame doesn't look like the tree stopped
+            const now = performance.now();
+            const dt = Math.min(0.1, (now - (animate.last || now)) / 1000);
+            animate.last = now;
+            treeGroup.rotation.y += 0.48 * dt;
+            if (treeMat && Math.abs(stageTarget - stageNow) > 0.001) {   // smooth grow / shrink
+                stageNow += (stageTarget - stageNow) * Math.min(1, dt * 5);
+                applyStage();
+            }
+
+            if (starGroup) {
+                starGroup.rotation.y -= 0.96 * dt;
+                const sy = treeTopTarget + 0.5 - 4.8;    // star's lower points rest on the leader
+                starGroup.position.y += (sy - starGroup.position.y) * 0.1;
+                const time = Date.now() * 0.004;
+                const c = new THREE.Color();
+                let index = 0;
+                starMeshes.forEach((mesh) => {
+                    mesh.userData.items.forEach((it, i) => {
+                        const flash = Math.pow(Math.abs(Math.sin(time * 0.7 + index++ * 0.5)), 5);
+                        c.setHSL(it.hsl.h, it.hsl.s, Math.min(1.0, flash * 3.0));
+                        mesh.setColorAt(i, c);
+                    });
+                    mesh.instanceColor.needsUpdate = true;
+                });
+            }
+
+            updateSnow(dt);
+            renderer.render(scene, camera);
+        }
+
+        // The tree lives in the space between the text field and the bottom of the *visible* screen.
+        // On phones the visible area shrinks when the keyboard opens, so the tree shrinks with it
+        // instead of being pushed off the top.
+        let lastLayout = '';
+        let resizeQueued = false;
+        function scheduleResize() {           // coalesce bursts (keyboard animation, typing) into one per frame
+            if (resizeQueued) return;
+            resizeQueued = true;
+            requestAnimationFrame(() => { resizeQueued = false; onResize(); });
+        }
+        function onResize() {
+            const vv = window.visualViewport;
+            const W = window.innerWidth;
+            const H = vv ? vv.height : window.innerHeight;
+            const wrap = document.getElementById('tree-text-wrap');
+            const top = Math.round(wrap.getBoundingClientRect().bottom + 8);
+            const h = Math.max(120, H - top);
+            // Resizing the WebGL canvas reallocates its buffers, which is slow on phones:
+            // only do it when the size really changed.
+            const key = W + 'x' + h + '@' + top;
+            if (key === lastLayout) return;
+            lastLayout = key;
+            renderer.setPixelRatio(PIXEL_RATIO);
+            renderer.setSize(W, h);
+            renderer.domElement.style.top = top + 'px';
+            camera.aspect = W / h;
+            camera.updateProjectionMatrix();
+            fitCamera();
+        }
+
+        // ---- "Trees made so far" counter + private log of shared messages (Firebase Firestore,
+        // same project as the Open Diary). Loaded after the page is up so it never slows the tree down.
+        //  - stats/trees {count}: public counter, can only go up by exactly 1 per write (see Firestore rules)
+        //  - treeShares/{id} {text, seed, createdAt}: write-only from the page; only visible in the Firebase console
+        let shareDb = null;
+        const pendingShares = [];               // Share pressed before Firebase finished loading
+        // count each message/tree once per browser (survives reloads, so refreshing + Share doesn't inflate)
+        const SHARED_KEY = 'treeSharedKeys';
+        const sharedKeys = (() => { try { return new Set(JSON.parse(localStorage.getItem(SHARED_KEY) || '[]')); } catch (e) { return new Set(); } })();
+        const rememberShared = () => { try { localStorage.setItem(SHARED_KEY, JSON.stringify([...sharedKeys].slice(-200))); } catch (e) {} };
+        let shownCount = null;
+
+        function loadScript(src) {
+            return new Promise((ok, fail) => {
+                const sc = document.createElement('script');
+                sc.src = src; sc.async = true; sc.onload = ok; sc.onerror = fail;
+                document.head.appendChild(sc);
+            });
+        }
+        function showCount(n) {
+            shownCount = n;
+            document.getElementById('tree-count-n').textContent = n.toLocaleString('en-US');
+            document.getElementById('tree-count').classList.add('ready');
+        }
+        // Read the counter once on load and then once a minute while the page is visible.
+        // (A live listener would cost one database read per viewer for EVERY share made anywhere,
+        //  which could use up the free daily quota quickly during promotion.)
+        async function refreshCount() {
+            if (!shareDb || document.hidden) return;
+            try {
+                const d = await shareDb.collection('stats').doc('trees').get();
+                const n = (d.exists && d.data().count) || 0;
+                if (shownCount === null || n > shownCount) showCount(n);
+            } catch (e) {}
+        }
+        async function setupShareCounter() {
+            try {
+                await loadScript('https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js');
+                await loadScript('https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js');
+                const app = firebase.apps.length ? firebase.app() : firebase.initializeApp({
+                    apiKey: 'AIzaSyBo1BrNIZ7zG5D_1ISGckP3Y8OdgAjJ0nI',
+                    authDomain: 'sscv2-98e6a.firebaseapp.com',
+                    projectId: 'sscv2-98e6a',
+                    storageBucket: 'sscv2-98e6a.firebasestorage.app',
+                    messagingSenderId: '570226771031',
+                    appId: '1:570226771031:web:795ef86749ea312b2a8f12',
+                });
+                shareDb = app.firestore();
+                await refreshCount();
+                setInterval(refreshCount, 60000);
+                document.addEventListener('visibilitychange', refreshCount);
+                pendingShares.splice(0).forEach(logShare);
+            } catch (e) { /* offline or blocked (e.g. ad blocker): the tree still works, just without the counter */ }
+        }
+        function logShare(text) {
+            if (!shareDb) { pendingShares.push(text); return; }
+            const key = TREE_SEED + '|' + text;
+            if (sharedKeys.has(key)) return;   // pressing Share again for the same tree doesn't count twice
+            sharedKeys.add(key);
+            rememberShared();
+            const fv = firebase.firestore.FieldValue;
+            shareDb.collection('treeShares').add({
+                text: Array.from(text).slice(0, 40).join(''),   // whole characters only (no broken emoji)
+                seed: TREE_SEED.toString(36),
+                createdAt: fv.serverTimestamp(),
+            }).catch(() => {});
+            shareDb.collection('stats').doc('trees').set({ count: fv.increment(1) }, { merge: true })
+                .then(() => { if (shownCount !== null) showCount(shownCount + 1); })   // show your own share right away
+                .catch(() => {});
+        }
+
+        // ================= Snow =================
+        // 1) Snowflakes fall with a little wind.
+        // 2) A flake that reaches the upper surface of the tree sticks to the letter it landed on
+        //    (only the topmost letter in each little column of space can catch snow, like a real roof).
+        //    Stuck snow rides along with that letter, so it turns with the tree and moves as branches thicken.
+        //    The longer the page stays open, the more snow builds up.
+        // 3) When the tree grows or shrinks, it shakes: snow on letters that disappear always falls, and
+        //    some of the rest is knocked off. Falling clumps fly outward, drop with gravity and settle on
+        //    the ground around the tree.
+        const SNOW = {
+            fall: IS_PHONE ? 600 : 1000,          // flakes in the air
+            stuckMax: IS_PHONE ? 1800 : 3200,     // most snow the tree can hold
+            groundMax: IS_PHONE ? 1200 : 2000,    // snow on the ground
+            debrisMax: 1500,
+            cell: 0.22,                           // size of the "columns" used to find where flakes land
+        };
+        let snowReady = false, snowTop = null, snowStage = -1;
+        let fallPts, fallPos, fallVel, stuckPts, stuckPos, debrisPts, debrisPos, groundPts, groundPos;
+        const stuck = [];      // {g: letter index, ox, oy, oz}
+        const debris = [];     // {x,y,z, vx,vy,vz}
+        let groundN = 0, groundNext = 0;
+        let fallRadius = 6, fallTop = 8, groundY = -3.5;
+
+        function snowTexture() {
+            const c = document.createElement('canvas'); c.width = c.height = 32;
+            const g = c.getContext('2d');
+            const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+            grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.45, 'rgba(255,255,255,.85)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+            g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+            return new THREE.CanvasTexture(c);
+        }
+        function makePoints(n, size, opacity, parent) {
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(n * 3).fill(1e5);
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+            geo.setDrawRange(0, 0);
+            const mat = new THREE.PointsMaterial({ size, map: SNOW_TEX, transparent: true, opacity, depthWrite: false, color: 0xffffff, sizeAttenuation: true });
+            const pts = new THREE.Points(geo, mat);
+            pts.frustumCulled = false;
+            parent.add(pts);
+            return [pts, pos];
+        }
+        let SNOW_TEX = null;
+
+        function setupSnow() {
+            SNOW_TEX = snowTexture();
+            fallRadius = FIT_R * 1.25;
+            fallTop = 0.8 + FIT_TOP + 3;
+            groundY = 0.8 + GROUND;
+            [fallPts, fallPos] = makePoints(SNOW.fall, 0.07, 0.9, scene);
+            fallVel = new Float32Array(SNOW.fall * 2);
+            for (let i = 0; i < SNOW.fall; i++) respawnFlake(i, true);
+            fallPts.geometry.setDrawRange(0, SNOW.fall);
+            [stuckPts, stuckPos] = makePoints(SNOW.stuckMax, 0.085, 0.95, treeGroup);   // rides with the tree
+            [debrisPts, debrisPos] = makePoints(SNOW.debrisMax, 0.08, 0.95, scene);
+            [groundPts, groundPos] = makePoints(SNOW.groundMax, 0.1, 0.8, scene);
+            snowReady = true;
+        }
+        function respawnFlake(i, anywhere) {
+            const a = Math.random() * Math.PI * 2, r = fallRadius * Math.sqrt(Math.random());
+            fallPos[i * 3] = Math.cos(a) * r;
+            fallPos[i * 3 + 1] = anywhere ? groundY + Math.random() * (fallTop - groundY) : fallTop + Math.random() * 2;
+            fallPos[i * 3 + 2] = Math.sin(a) * r;
+            fallVel[i * 2] = 0.55 + Math.random() * 0.5;           // fall speed
+            fallVel[i * 2 + 1] = Math.random() * Math.PI * 2;      // sway phase
+        }
+
+        // where a letter is right now (tree-local coordinates), mirroring the GPU code
+        function glyphPos(i, out) {
+            const S = GLY.S, ap = GLY.ap[i];
+            const t = Math.min(1, Math.max(0, (stageNow - ap) / Math.max(1, S - ap)));
+            const r = GLY.rA[i] + (GLY.rF[i] - GLY.rA[i]) * t;
+            out[0] = GLY.base[i * 3] + GLY.dir[i * 3] * r;
+            out[1] = GLY.base[i * 3 + 1] + GLY.dir[i * 3 + 1] * r;
+            out[2] = GLY.base[i * 3 + 2] + GLY.dir[i * 3 + 2] * r;
+            return out;
+        }
+        function glyphVisible(i, stage) {
+            return GLY.leader[i] < 0 && stage >= GLY.ap[i] + 0.5 && stage < GLY.van[i] + 0.5;
+        }
+
+        // the highest visible letter in every small column (x,z) = the tree's snow-catching surface
+        function rebuildSnowTop() {
+            snowTop = new Map();
+            const p = [0, 0, 0], C = SNOW.cell;
+            for (let i = 0; i < GLY.n; i++) {
+                if (!glyphVisible(i, stageNow)) continue;
+                glyphPos(i, p);
+                const k = Math.floor(p[0] / C) + ',' + Math.floor(p[2] / C);
+                const cur = snowTop.get(k);
+                if (cur === undefined || p[1] > cur.y) snowTop.set(k, { y: p[1], g: i });
+            }
+            snowStage = stageNow;
+        }
+
+        function addGround(x, z) {
+            const k = groundNext; groundNext = (groundNext + 1) % SNOW.groundMax; groundN = Math.min(SNOW.groundMax, groundN + 1);
+            groundPos[k * 3] = x; groundPos[k * 3 + 1] = groundY + Math.random() * 0.05; groundPos[k * 3 + 2] = z;
+        }
+
+        function snowShake(strength) {
+            if (!snowReady || !stuck.length) return;
+            const knock = Math.min(0.7, 0.12 + strength * 4);    // bigger change = harder shake
+            const rot = treeGroup.rotation.y, cs = Math.cos(rot), sn = Math.sin(rot);
+            const p = [0, 0, 0];
+            for (let k = stuck.length - 1; k >= 0; k--) {
+                const s = stuck[k];
+                const gone = !glyphVisible(s.g, stageTarget);
+                if (!gone && Math.random() > knock) continue;
+                stuck.splice(k, 1);
+                if (debris.length >= SNOW.debrisMax) continue;
+                glyphPos(s.g, p);
+                const lx = p[0] + s.ox, ly = p[1] + s.oy, lz = p[2] + s.oz;
+                // tree-local -> world (tree is rotated about Y and raised by 0.8)
+                const wx = lx * cs + lz * sn, wz = -lx * sn + lz * cs, wy = ly + 0.8;
+                const rr = Math.hypot(wx, wz) || 1;
+                const out = 0.4 + Math.random() * 1.2;
+                debris.push({ x: wx, y: wy, z: wz, vx: (wx / rr) * out + (Math.random() - 0.5) * 0.4, vy: 0.6 + Math.random() * 1.2, vz: (wz / rr) * out + (Math.random() - 0.5) * 0.4 });
+            }
+        }
+
+        function updateSnow(dt) {
+            if (!snowReady) { if (GLY && FIT_R) setupSnow(); else return; }
+            if (snowTop === null || Math.abs(stageNow - snowStage) > 0.25) rebuildSnowTop();
+            const time = performance.now() / 1000;
+            const rot = treeGroup.rotation.y, cs = Math.cos(rot), sn = Math.sin(rot);
+            const C = SNOW.cell;
+
+            // 1) falling flakes
+            for (let i = 0; i < SNOW.fall; i++) {
+                const o = i * 3;
+                const py = fallPos[o + 1];
+                const ny = py - fallVel[i * 2] * dt;
+                fallPos[o] += Math.sin(time * 0.8 + fallVel[i * 2 + 1]) * 0.25 * dt + 0.06 * dt;   // sway + light wind
+                fallPos[o + 2] += Math.cos(time * 0.6 + fallVel[i * 2 + 1]) * 0.2 * dt;
+                fallPos[o + 1] = ny;
+                // world -> tree-local to see if it lands on the tree
+                const x = fallPos[o], z = fallPos[o + 2];
+                const lx = x * cs - z * sn, lz = x * sn + z * cs, ly = ny - 0.8, lpy = py - 0.8;
+                const top = snowTop.get(Math.floor(lx / C) + ',' + Math.floor(lz / C));
+                if (top && lpy >= top.y && ly < top.y + 0.02) {
+                    if (stuck.length < SNOW.stuckMax) {
+                        const p = glyphPos(top.g, [0, 0, 0]);
+                        stuck.push({ g: top.g, ox: lx - p[0], oy: 0.05 + Math.random() * 0.04, oz: lz - p[2] });
+                        top.y += 0.012;            // snow piles up a little
+                        respawnFlake(i, false);
+                        continue;
+                    }
+                }
+                if (ny < groundY) {
+                    if (Math.random() < 0.06) addGround(x, z);   // a gentle carpet builds on the ground
+                    respawnFlake(i, false);
+                }
+            }
+            fallPts.geometry.attributes.position.needsUpdate = true;
+
+            // 2) snow on the tree follows its letters
+            const p = [0, 0, 0];
+            for (let k = 0; k < stuck.length; k++) {
+                const s = stuck[k];
+                glyphPos(s.g, p);
+                stuckPos[k * 3] = p[0] + s.ox; stuckPos[k * 3 + 1] = p[1] + s.oy; stuckPos[k * 3 + 2] = p[2] + s.oz;
+            }
+            stuckPts.geometry.setDrawRange(0, stuck.length);
+            stuckPts.geometry.attributes.position.needsUpdate = true;
+
+            // 3) shaken-off clumps: gravity, then they settle on the ground
+            for (let k = debris.length - 1; k >= 0; k--) {
+                const d = debris[k];
+                d.vy -= 7 * dt; d.vx *= 0.99; d.vz *= 0.99;
+                d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+                if (d.y <= groundY) { addGround(d.x, d.z); debris.splice(k, 1); }
+            }
+            for (let k = 0; k < debris.length; k++) {
+                debrisPos[k * 3] = debris[k].x; debrisPos[k * 3 + 1] = debris[k].y; debrisPos[k * 3 + 2] = debris[k].z;
+            }
+            debrisPts.geometry.setDrawRange(0, debris.length);
+            debrisPts.geometry.attributes.position.needsUpdate = true;
+
+            groundPts.geometry.setDrawRange(0, groundN);
+            groundPts.geometry.attributes.position.needsUpdate = true;
+        }
+
+        init(); // run after all declarations above
+        // DEV: no share counter / message log, so testing doesn't pollute the real numbers
+        // setTimeout(setupShareCounter, 1500);
+
+        // --- Christmas music: "We Wish You a Merry Christmas" (public-domain melody, WebAudio chiptune) ---
+        const music = (() => {
+            const N = { D4: 293.66, E4: 329.63, Fs4: 369.99, G4: 392.0, A4: 440.0, B4: 493.88, C5: 523.25 };
+            // [frequency, beats] in 3/4 time
+            const MELODY = [
+                [N.D4, 1],
+                [N.G4, 1], [N.G4, 0.5], [N.A4, 0.5], [N.G4, 0.5], [N.Fs4, 0.5],
+                [N.E4, 1], [N.E4, 1], [N.E4, 1],
+                [N.A4, 1], [N.A4, 0.5], [N.B4, 0.5], [N.A4, 0.5], [N.G4, 0.5],
+                [N.Fs4, 1], [N.Fs4, 1], [N.D4, 1],
+                [N.B4, 1], [N.B4, 0.5], [N.C5, 0.5], [N.B4, 0.5], [N.A4, 0.5],
+                [N.G4, 1], [N.E4, 1], [N.D4, 0.5], [N.D4, 0.5],
+                [N.E4, 1], [N.A4, 1], [N.Fs4, 1],
+                [N.G4, 2], [0, 1.5]
+            ];
+            const BEAT = 0.34;
+            let ctx = null;
+            let playing = false;
+            let loopTimer = null;
+
+            function note(t, freq, beats) {
+                if (!freq) return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+                const dur = beats * BEAT;
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(0.16, t + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.95);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(t);
+                osc.stop(t + dur);
+            }
+
+            function scheduleMelody() {
+                let t = ctx.currentTime + 0.02;
+                for (const [f, b] of MELODY) {
+                    note(t, f, b);
+                    t += b * BEAT;
+                }
+                loopTimer = setTimeout(() => { if (playing) scheduleMelody(); }, (t - ctx.currentTime - 0.2) * 1000);
+            }
+
+            return {
+                get playing() { return playing; },
+                running() { return !!ctx && ctx.state === 'running' && playing; },
+                start() {
+                    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const begin = () => {
+                        if (playing) return;
+                        playing = true;
+                        scheduleMelody();
+                    };
+                    // Safari: only schedule notes once the context is actually running,
+                    // otherwise pre-scheduled notes resume late/unreliably.
+                    if (ctx.state === 'running') {
+                        begin();
+                    } else {
+                        ctx.resume().then(() => {
+                            if (ctx.state === 'running') begin();
+                        }).catch(() => {});
+                    }
+                },
+                stop() {
+                    playing = false;
+                    clearTimeout(loopTimer);
+                    if (ctx) ctx.suspend();
+                }
+            };
+        })();
+
+        // Sound: browsers (especially phones) only allow audio after the visitor touches the page.
+        // Try right away (works on desktop when allowed); otherwise start on the FIRST touch anywhere —
+        // dragging the tree, tapping the field, anything. iPhones only accept "touch end / click / key"
+        // as permission, not the start of a touch, so listen for those and keep listening until the
+        // sound is really running.
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} // iOS: play even with the silent switch on
+        const UNLOCK_EVENTS = ['touchend', 'pointerup', 'click', 'keydown'];
+        function tryStart() {
+            music.start();
+            setTimeout(() => {
+                if (music.running()) UNLOCK_EVENTS.forEach((evt) => window.removeEventListener(evt, tryStart, true));
+            }, 300);
+        }
+        tryStart();
+        UNLOCK_EVENTS.forEach((evt) => window.addEventListener(evt, tryStart, true));
+        // corner hint: how to rotate / zoom (mouse vs touch wording)
+        (function controlsHint() {
+            const el = document.getElementById('controls-hint');
+            const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+            el.innerHTML = touch
+                ? '<b>drag</b> to rotate<br><b>pinch</b> to zoom'
+                : '<b>drag</b> to rotate<br><b>scroll</b> to zoom';
+            controls.addEventListener('start', () => el.classList.add('used'), { once: true });
+        })();
+
+        // small "tap to play" hint while the browser is still holding the sound back
+        const tapHint = document.getElementById('tap-hint');
+        setTimeout(() => { if (!music.running()) tapHint.classList.add('show'); }, 600);
+        (function watchSound() {
+            if (music.running()) { tapHint.classList.remove('show'); setTimeout(() => tapHint.remove(), 500); return; }
+            setTimeout(watchSound, 250);
+        })();
+    </script>
+</body>
+</html>
