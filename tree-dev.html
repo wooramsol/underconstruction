@@ -352,8 +352,10 @@
 
         function growTree() {
             // 1. attraction points inside the crown (bottom 13% stays bare trunk)
-            const isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
-            const A = isMobile ? 1100 : 1500;
+            // Same number on every device: the tree's shape must depend only on the seed, otherwise a link
+            // made on a computer would grow a different tree on a phone. (1500 = what computers always used,
+            // so trees already shared from computers keep their shape.)
+            const A = 1500;
             const pts = [];
             while (pts.length < A) {
                 const y = GROUND + TREE_H * (0.13 + 0.87 * rand());
