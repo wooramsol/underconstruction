@@ -11,7 +11,7 @@
   }
 
   function layout(g) {
-    var imgs = g._imgs || (g._imgs = Array.prototype.slice.call(g.querySelectorAll('img')));
+    var imgs = g._imgs || (g._imgs = Array.prototype.slice.call(g.querySelectorAll('img, video')));
     g.innerHTML = '';
     if (!desktop.matches || imgs.length < 2) {
       g.classList.remove('is-masonry');

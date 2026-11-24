@@ -139,7 +139,27 @@
     </nav>
     <hr class="header-line">
 
-    <main id="project-container" data-build="859832299"><!-- PROJECTS:START -->
+    <main id="project-container" data-build="530441113"><!-- PROJECTS:START -->
+                <section class="project-item">
+                    <div class="project-images">
+                        
+                            <a href="zippo_candle.html" class="main">
+                                <video data-src="zippo_candle/main.mp4" poster="zippo_candle/poster.webp" width="338" height="600" title="Zippo Candle" aria-label="Zippo Candle by Ramsol Jeong — demo video" class="mousehover lazy-video" muted loop playsinline preload="none"></video>
+                            </a>
+                        
+                            <a href="zippo_candle.html" class="">
+                                <img src="zippo_candle/t_2.webp" width="335" height="600" alt="Zippo Candle by Ramsol Jeong" title="Zippo Candle" class="mousehover" loading="eager">
+                            </a>
+                        
+                    </div>
+                    <div class="project-description"><h2 class="project-title">Zippo Candle</h2>The smell of Zippo fluid always takes me back to the kerosene heater I used as a kid.
+Flip it over and it works just like a regular tealight.
+
+Download STL file:
+<a href="https://cults3d.com/en/3d-model/home/zippo-candle" target="_blank" rel="noopener">https://cults3d.com/en/3d-model/home/zippo-candle</a></div>
+                </section>
+                <hr>
+            
                 <section class="project-item">
                     <div class="project-images">
                         
@@ -163,11 +183,11 @@ Demo: <a href="https://www.youtube.com/shorts/7NMi1px5aP8" target="_blank" rel="
                     <div class="project-images">
                         
                             <a href="ad_hoc_lamp.html" class="main">
-                                <img src="ad_hoc_lamp/t_1.webp" width="450" height="600" alt="Ad Hoc Lamp by Ramsol Jeong" title="Ad Hoc Lamp" class="mousehover" loading="eager">
+                                <img src="ad_hoc_lamp/t_1.webp" width="450" height="600" alt="Ad Hoc Lamp by Ramsol Jeong" title="Ad Hoc Lamp" class="mousehover" loading="lazy">
                             </a>
                         
                             <a href="ad_hoc_lamp.html" class="">
-                                <img src="ad_hoc_lamp/t_2.webp" width="450" height="600" alt="Ad Hoc Lamp by Ramsol Jeong" title="Ad Hoc Lamp" class="mousehover" loading="eager">
+                                <img src="ad_hoc_lamp/t_2.webp" width="450" height="600" alt="Ad Hoc Lamp by Ramsol Jeong" title="Ad Hoc Lamp" class="mousehover" loading="lazy">
                             </a>
                         
                     </div>
@@ -645,6 +665,7 @@ Available on the Chrome Web Store: <a href="https://chromewebstore.google.com/de
 
     <script>
         const projectData = [
+            { folder: 'zippo_candle', title: 'Zippo Candle', images: ['main.mp4', '2.webp'], poster: 'poster.webp', mediaSize: [338, 600], main: 0, desc: `The smell of Zippo fluid always takes me back to the kerosene heater I used as a kid.\nFlip it over and it works just like a regular tealight.\n\nDownload STL file:\n<a href="https://cults3d.com/en/3d-model/home/zippo-candle" target="_blank" rel="noopener">https://cults3d.com/en/3d-model/home/zippo-candle</a>` },
             { folder: 'let_there_be_light', title: 'Let there be light', link: 'https://www.youtube.com/shorts/7NMi1px5aP8', images: ['main.mp4'], poster: 'poster.webp', mediaSize: [480, 600], main: 0, desc: `I found a way to save on my electric bill.\n\nThe bulb is off. The light is pure code.\nA WebGL shader paints it in real time, while MediaPipe finds your hands and body so the glow lands where it should.\n\nI first tried training a model on the bulb, but clear glass is really hard to track, so I stuck a green sticker on it instead. Any ideas for detecting a clear bulb in the dark?\n\nDemo: <a href="https://www.youtube.com/shorts/7NMi1px5aP8" target="_blank" rel="noopener">https://www.youtube.com/shorts/7NMi1px5aP8</a>` },
             { folder: 'ad_hoc_lamp', title: 'Ad Hoc Lamp', images: ['1.webp', '2.webp'], main: 0, desc: `Make your own lamp using paper, a wine bottle, and more.\nNow with improved durability and usability.\n\nDownload STL file:\n<a href="https://cults3d.com/en/3d-model/home/ad-hoc-lamp-2026" target="_blank" rel="noopener">https://cults3d.com/en/3d-model/home/ad-hoc-lamp-2026</a>` },
             { folder: 'makemecubemaster', title: 'Make Me Cube Master', link: 'https://wooramsol.github.io/makemecubemaster/', images: ['main.mp4'], poster: 'poster.webp', mediaSize: [338, 600], main: 0, desc: `Have you heard of God‘s Number?\nEvery 3×3 Rubik’s Cube can be solved in 20 moves or fewer. It was mathematically proven in 2010. Finding that shortest solution yourself is nearly impossible.\n\nBut computers can.\nI built a tool that lets you follow the shortest solution, step by step.\n1. Colour calibration: Scan all 6 sticker colours for your lighting\n2. Scanning: Capture all 6 faces of your scrambled cube with the front camera (If a colour looks wrong, tap that face in the bar to re-scan)\n3. Computing: The solver finds a sequence within 20 moves\n4. Solution: Follow the 3D guide\n\nDemo: <a href="https://www.youtube.com/shorts/P-S4AqNKu9Q" target="_blank" rel="noopener">https://www.youtube.com/shorts/P-S4AqNKu9Q</a>` },
@@ -675,6 +696,7 @@ Available on the Chrome Web Store: <a href="https://chromewebstore.google.com/de
 
         // Downscaled thumbnails (originals stay for project pages) + dims to prevent layout shift
         const THUMBS = {
+            'zippo_candle/2.webp': ['zippo_candle/t_2.webp', 335, 600],
             'makemecubemaster/1.webp': ['makemecubemaster/t_1.webp', 333, 600],
             'blinktype/1.webp': ['blinktype/t_1.webp', 488, 600],
             'ad_hoc_lamp/1.webp': ['ad_hoc_lamp/t_1.webp', 450, 600],
